@@ -1,7 +1,8 @@
-# Kayoko
+# KayokoX
 
-多功能剪切板，参考致敬了Copy-Vault
+多功能剪切板，基于OwnGoalStudio和mlgm66版本进行二次开发
 支持ios16~ios17，roothide
+原作者：AlexandraAurora
 ## Credits
 
 - Original project: [AlexandraAurora/Kayoko](https://github.com/AlexandraAurora/Kayoko)

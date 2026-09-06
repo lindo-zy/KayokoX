@@ -1,4 +1,4 @@
-name: Build Kayoko roothide
+name: Build KayokoX roothide
 
 on:
   push:
@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: kayoko-roothide-${{ github.workflow }}-${{ github.ref }}
+  group: KayokoX-roothide-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -85,7 +85,7 @@ jobs:
       - name: Upload Debian package
         uses: actions/upload-artifact@v4
         with:
-          name: kayoko-roothide-${{ matrix.ios }}-sdk-${{ matrix.sdk }}
+          name: KayokoX-roothide-${{ matrix.ios }}-sdk-${{ matrix.sdk }}
           path: packages/*.deb
           if-no-files-found: error
           retention-days: 14
@@ -137,6 +137,6 @@ jobs:
             gh release upload "${tag}" "${assets[@]}" --repo "${repo}" --clobber
           else
             gh release create "${tag}" "${assets[@]}" --repo "${repo}" \
-              --title "Kayoko ${tag}" \
+              --title "KayokoX ${tag}" \
               --generate-notes
           fi

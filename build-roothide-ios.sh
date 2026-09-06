@@ -12,6 +12,11 @@ export PATH="/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/
 MAKE_BIN="$(command -v gmake || command -v make)"
 PACKAGE_ID="$(awk -F': ' '/^Package:/{print $2; exit}' "$ROOT/control")"
 
+if [[ -z "$PACKAGE_ID" || ! "$PACKAGE_ID" =~ ^[a-z0-9][a-z0-9+.-]*$ ]]; then
+    echo "error: invalid Debian package name in control: ${PACKAGE_ID:-<missing>}" >&2
+    exit 1
+fi
+
 if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
     echo "Usage: $0 [ios16|ios17|all]"
     exit 0
