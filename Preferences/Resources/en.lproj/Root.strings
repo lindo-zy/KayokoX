@@ -60,7 +60,13 @@
 "Preview Lines" = "Preview Lines";
 "Previous" = "Previous";
 "Privacy Mode" = "Privacy Mode";
-"Quick Preview" = "Quick Preview";
+"Floating Preview" = "Floating Preview";
+"Enable Floating Preview" = "Enable Floating Preview";
+"Size" = "Size";
+"Floating Duration" = "Floating Duration";
+"Color" = "Color";
+"Preview" = "Preview";
+"The floating preview is always semi-transparent and stays fully visible at the screen edge." = "The floating preview is always semi-transparent and stays fully visible at the screen edge.";
 "Purchase Kayoko on Havoc Marketplace to support ongoing OwnGoal Studio maintenance." = "Purchase Kayoko on Havoc Marketplace to support ongoing OwnGoal Studio maintenance.";
 "Respring" = "Respring";
 "Respring Now" = "Respring Now";

@@ -25,6 +25,22 @@
 static NSTimeInterval const kKayokoMinimumFeedbackInterval = 0.6;
 static NSTimeInterval const kKayokoPasteSuppressionExpirationDelay = 1.0;
 
+static UIColor *KayokoFloatingPreviewColorFromHex(NSString *hexColor) {
+    NSString *value = [hexColor stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    if ([value hasPrefix:@"#"]) {
+        value = [value substringFromIndex:1];
+    }
+    unsigned long long number = 0;
+    NSScanner *scanner = [NSScanner scannerWithString:value ?: @""];
+    if (![scanner scanHexLongLong:&number] || scanner.isAtEnd == NO || (value.length != 6 && value.length != 8)) {
+        return [UIColor colorWithWhite:0.20 alpha:0.72];
+    }
+    CGFloat red = ((number >> (value.length == 8 ? 24 : 16)) & 0xFF) / 255.0;
+    CGFloat green = ((number >> (value.length == 8 ? 16 : 8)) & 0xFF) / 255.0;
+    CGFloat blue = ((number >> (value.length == 8 ? 8 : 0)) & 0xFF) / 255.0;
+    return [UIColor colorWithRed:red green:green blue:blue alpha:0.72];
+}
+
 @interface UIApplication (KayokoPrivate)
 - (UIInterfaceOrientation)_frontMostAppOrientation;
 @end
@@ -109,6 +125,179 @@ NS_ASSUME_NONNULL_END
 
 @end
 
+@interface KayokoFloatingPreviewView : UIView
+@end
+
+@implementation KayokoFloatingPreviewView
+
+- (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
+    UIView *hitView = [super hitTest:point withEvent:event];
+    return hitView == self ? nil : hitView;
+}
+
+@end
+
+@interface KayokoFloatingPreviewViewController : UIViewController
+
+@property(nonatomic, strong) UIButton *button;
+@property(nonatomic, strong) UIPanGestureRecognizer *panGestureRecognizer;
+@property(nonatomic, copy, nullable) void (^tapHandler)(void);
+@property(nonatomic, copy, nullable) void (^positionChangedHandler)(BOOL dockedRight, CGFloat verticalPosition);
+@property(nonatomic, assign) BOOL hasCustomPosition;
+@property(nonatomic, assign) BOOL dockedRight;
+@property(nonatomic, assign) CGFloat verticalPosition;
+@property(nonatomic, assign) CGFloat bubbleDiameter;
+@property(nonatomic, strong) UIColor *bubbleColor;
+@property(nonatomic, assign) BOOL didMoveDuringPan;
+
+- (void)setPreviewImage:(nullable UIImage *)image;
+- (void)applyBubbleDiameter:(CGFloat)diameter color:(UIColor *)color;
+
+@end
+
+@implementation KayokoFloatingPreviewViewController
+
+static CGFloat const kKayokoFloatingPreviewDefaultDiameter = 64.0;
+// Keep the bubble fully visible vertically while allowing its outer edge to
+// touch the left/right screen edges with no artificial horizontal gap.
+static CGFloat const kKayokoFloatingPreviewHorizontalEdgeInset = 0.0;
+static CGFloat const kKayokoFloatingPreviewVerticalEdgeInset = 12.0;
+
+- (void)loadView {
+    [self setView:[[KayokoFloatingPreviewView alloc] initWithFrame:CGRectZero]];
+}
+
+- (void)viewDidLoad {
+    [super viewDidLoad];
+
+    UIButton *button = [UIButton buttonWithType:UIButtonTypeSystem];
+    [button setTintColor:[UIColor whiteColor]];
+    if (!self.bubbleColor) {
+        [self setBubbleColor:[UIColor colorWithWhite:0.20 alpha:0.72]];
+    }
+    if (self.bubbleDiameter <= 0.0) {
+        [self setBubbleDiameter:kKayokoFloatingPreviewDefaultDiameter];
+    }
+    [button setBackgroundColor:[[self bubbleColor] colorWithAlphaComponent:0.72]];
+    [[button layer] setCornerRadius:[self bubbleDiameter] * 0.5];
+    [[button layer] setBorderWidth:1.0];
+    [[button layer] setBorderColor:[[UIColor colorWithWhite:1.0 alpha:0.42] CGColor]];
+    [[button layer] setShadowColor:[[UIColor blackColor] CGColor]];
+    [[button layer] setShadowOpacity:0.28];
+    [[button layer] setShadowRadius:8.0];
+    [[button layer] setShadowOffset:CGSizeMake(0, 3)];
+    UITapGestureRecognizer *tapGestureRecognizer =
+        [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(buttonTapped:)];
+    [button addGestureRecognizer:tapGestureRecognizer];
+    UIPanGestureRecognizer *panGestureRecognizer =
+        [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(handlePanGestureRecognizer:)];
+    [panGestureRecognizer setCancelsTouchesInView:NO];
+    [button addGestureRecognizer:panGestureRecognizer];
+    [tapGestureRecognizer requireGestureRecognizerToFail:panGestureRecognizer];
+    [[self view] addSubview:button];
+    [self setButton:button];
+    [self setPanGestureRecognizer:panGestureRecognizer];
+}
+
+- (void)viewDidLayoutSubviews {
+    [super viewDidLayoutSubviews];
+
+    CGFloat size = MAX(1.0, [self bubbleDiameter]);
+    CGRect bounds = [[self view] bounds];
+    CGFloat verticalInset = kKayokoFloatingPreviewVerticalEdgeInset;
+    CGFloat minimumCenterY = CGRectGetMinY(bounds) + verticalInset + size * 0.5;
+    CGFloat maximumCenterY = MAX(minimumCenterY, CGRectGetMaxY(bounds) - verticalInset - size * 0.5);
+    CGFloat centerY = [self hasCustomPosition]
+                          ? minimumCenterY + ([self verticalPosition] * (maximumCenterY - minimumCenterY))
+                          : CGRectGetMidY(bounds);
+    centerY = MIN(MAX(centerY, minimumCenterY), maximumCenterY);
+    CGFloat minimumCenterX = CGRectGetMinX(bounds) + kKayokoFloatingPreviewHorizontalEdgeInset + size * 0.5;
+    CGFloat maximumCenterX = CGRectGetMaxX(bounds) - kKayokoFloatingPreviewHorizontalEdgeInset - size * 0.5;
+    CGFloat centerX = ([self hasCustomPosition] && ![self dockedRight]) ? minimumCenterX : maximumCenterX;
+    centerX = MIN(MAX(centerX, minimumCenterX), MAX(minimumCenterX, maximumCenterX));
+    [[self button] setFrame:CGRectMake(centerX - size * 0.5, centerY - size * 0.5, size, size)];
+}
+
+- (void)applyBubbleDiameter:(CGFloat)diameter color:(UIColor *)color {
+    [self setBubbleDiameter:MAX(1.0, diameter)];
+    [self setBubbleColor:color ?: [UIColor colorWithWhite:0.20 alpha:0.72]];
+    [[self button] setBackgroundColor:[[self bubbleColor] colorWithAlphaComponent:0.72]];
+    [[self button] layer].cornerRadius = [self bubbleDiameter] * 0.5;
+    [[self view] setNeedsLayout];
+}
+
+- (void)handlePanGestureRecognizer:(UIPanGestureRecognizer *)gestureRecognizer {
+    UIView *view = [self view];
+    UIButton *button = [self button];
+    if (!view || !button) {
+        return;
+    }
+
+    if ([gestureRecognizer state] == UIGestureRecognizerStateBegan) {
+        [self setDidMoveDuringPan:NO];
+    }
+
+    CGPoint translation = [gestureRecognizer translationInView:view];
+    if (fabs(translation.x) > 2.0 || fabs(translation.y) > 2.0) {
+        [self setDidMoveDuringPan:YES];
+    }
+    CGPoint center = [button center];
+    center.x += translation.x;
+    center.y += translation.y;
+    [gestureRecognizer setTranslation:CGPointZero inView:view];
+
+    CGFloat halfSize = MAX(1.0, [self bubbleDiameter]) * 0.5;
+    CGRect bounds = [view bounds];
+    CGFloat minimumX = CGRectGetMinX(bounds) + kKayokoFloatingPreviewHorizontalEdgeInset + halfSize;
+    CGFloat maximumX = MAX(minimumX, CGRectGetMaxX(bounds) - kKayokoFloatingPreviewHorizontalEdgeInset - halfSize);
+    CGFloat minimumY = CGRectGetMinY(bounds) + kKayokoFloatingPreviewVerticalEdgeInset + halfSize;
+    CGFloat maximumY = MAX(minimumY, CGRectGetMaxY(bounds) - kKayokoFloatingPreviewVerticalEdgeInset - halfSize);
+    center.x = MIN(MAX(center.x, minimumX), maximumX);
+    center.y = MIN(MAX(center.y, minimumY), maximumY);
+
+    if ([gestureRecognizer state] == UIGestureRecognizerStateBegan ||
+        [gestureRecognizer state] == UIGestureRecognizerStateChanged) {
+        [self setHasCustomPosition:YES];
+        [button setCenter:center];
+        return;
+    }
+
+    if ([gestureRecognizer state] == UIGestureRecognizerStateEnded ||
+        [gestureRecognizer state] == UIGestureRecognizerStateCancelled ||
+        [gestureRecognizer state] == UIGestureRecognizerStateFailed) {
+        [self setHasCustomPosition:YES];
+        [self setDockedRight:center.x >= CGRectGetMidX(bounds)];
+        [self setVerticalPosition:(center.y - minimumY) / MAX(1.0, maximumY - minimumY)];
+        if ([self positionChangedHandler]) {
+            [self positionChangedHandler]([self dockedRight], [self verticalPosition]);
+        }
+        [UIView animateWithDuration:0.2
+                         animations:^{
+                           [[self view] setNeedsLayout];
+                           [[self view] layoutIfNeeded];
+                         }];
+    }
+}
+
+- (void)setPreviewImage:(UIImage *)image {
+    UIImage *previewImage = image ?: [UIImage systemImageNamed:@"doc.on.clipboard.fill"];
+    [[self button] setImage:[previewImage imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate]
+                   forState:UIControlStateNormal];
+}
+
+- (void)buttonTapped:(UITapGestureRecognizer *)recognizer {
+    (void)recognizer;
+    if ([self didMoveDuringPan]) {
+        [self setDidMoveDuringPan:NO];
+        return;
+    }
+    if ([self tapHandler]) {
+        [self tapHandler]();
+    }
+}
+
+@end
+
 @implementation KayokoPasteSuppressionState
 
 - (void)beginWithExpirationDelay:(NSTimeInterval)expirationDelay {
@@ -174,7 +363,12 @@ NS_ASSUME_NONNULL_BEGIN
 @property(nonatomic, assign, readwrite, getter=isEnabled) BOOL enabled;
 @property(nonatomic, assign, readwrite) NSUInteger activationMethod;
 @property(nonatomic, assign) BOOL privacyMode;
-@property(nonatomic, assign) BOOL quickPreview;
+@property(nonatomic, assign) BOOL floatingPreview;
+@property(nonatomic, assign) CGFloat floatingPreviewSize;
+@property(nonatomic, assign) CGFloat floatingPreviewDuration;
+@property(nonatomic, strong) UIColor *floatingPreviewColor;
+@property(nonatomic, assign) BOOL floatingPreviewDockedRight;
+@property(nonatomic, assign) CGFloat floatingPreviewVerticalPosition;
 @property(nonatomic, assign, readwrite) KayokoGestureRecognizerMode gestureRecognizerMode;
 @property(nonatomic, assign, readwrite) BOOL pasteTipsDisabled;
 
@@ -184,6 +378,11 @@ NS_ASSUME_NONNULL_BEGIN
 @property(nonatomic, weak, nullable) UIWindow *statusBarWindow;
 @property(nonatomic, strong, nullable) UIControl *portraitOutsideDismissOverlayView;
 @property(nonatomic, strong, nullable) UIWindow *overlayWindow;
+@property(nonatomic, strong, nullable) UIWindow *floatingPreviewWindow;
+@property(nonatomic, strong, nullable) KayokoFloatingPreviewViewController *floatingPreviewViewController;
+@property(nonatomic, strong, nullable) KayokoPasteboardItem *floatingPreviewItem;
+@property(nonatomic, copy, nullable) dispatch_block_t floatingPreviewExpirationBlock;
+@property(nonatomic, assign) NSUInteger floatingPreviewDisplayToken;
 @property(nonatomic, assign) KayokoPanelPresentationMode activePresentationMode;
 @property(nonatomic, assign) BOOL pendingHeightPreferenceApply;
 @property(nonatomic, assign) BOOL didRequestInitialHistoryPreload;
@@ -232,6 +431,12 @@ NS_ASSUME_NONNULL_BEGIN
 - (CGRect)fullscreenPanelFrameInWindow:(nullable UIWindow *)window;
 - (KayokoPanelPresentationMode)currentPresentationMode;
 - (void)showQuickPreviewForItem:(KayokoPasteboardItem *)item;
+- (nullable UIWindow *)floatingPreviewWindowCreatingIfNeeded;
+- (void)showFloatingPreviewForItem:(KayokoPasteboardItem *)item;
+- (void)hideFloatingPreviewAnimated:(BOOL)animated;
+- (void)handleFloatingPreviewTap;
+- (void)cancelFloatingPreviewExpiration;
+- (void)applyFloatingPreviewAppearance;
 
 @end
 
@@ -421,6 +626,193 @@ NS_ASSUME_NONNULL_END
 
     [self.overlayWindow setWindowLevel:[self overlayWindowLevel]];
     return self.overlayWindow;
+}
+
+- (nullable UIWindow *)floatingPreviewWindowCreatingIfNeeded {
+    UIWindowScene *windowScene = [self.statusBarWindow windowScene];
+    if (!windowScene) {
+        return nil;
+    }
+
+    if (self.floatingPreviewWindow && [self.floatingPreviewWindow windowScene] != windowScene) {
+        [self.floatingPreviewWindow setHidden:YES];
+        [self.floatingPreviewWindow setRootViewController:nil];
+        self.floatingPreviewWindow = nil;
+        self.floatingPreviewViewController = nil;
+    }
+
+    if (!self.floatingPreviewWindow) {
+        UIWindow *window = [[KayokoOverlayWindow alloc] initWithWindowScene:windowScene];
+        [window setBackgroundColor:[UIColor clearColor]];
+        [window setOpaque:NO];
+        [window setClipsToBounds:YES];
+        [window setWindowLevel:[self overlayWindowLevel]];
+        [window setHidden:YES];
+
+        KayokoFloatingPreviewViewController *viewController =
+            [[KayokoFloatingPreviewViewController alloc] init];
+        __weak typeof(self) weakSelf = self;
+        [viewController setTapHandler:^{
+          [weakSelf handleFloatingPreviewTap];
+        }];
+        [viewController setPositionChangedHandler:^(BOOL dockedRight, CGFloat verticalPosition) {
+          __strong typeof(weakSelf) strongSelf = weakSelf;
+          if (!strongSelf) {
+              return;
+          }
+          strongSelf.floatingPreviewDockedRight = dockedRight;
+          strongSelf.floatingPreviewVerticalPosition = MIN(MAX(verticalPosition, 0.0), 1.0);
+          [strongSelf.preferences setBool:dockedRight forKey:kKayokoPreferenceKeyFloatingPreviewDockedRight];
+          [strongSelf.preferences setDouble:strongSelf.floatingPreviewVerticalPosition
+                                     forKey:kKayokoPreferenceKeyFloatingPreviewVerticalPosition];
+          [strongSelf.preferences synchronize];
+        }];
+        [window setRootViewController:viewController];
+        self.floatingPreviewWindow = window;
+        self.floatingPreviewViewController = viewController;
+        // Load the view before applying persisted appearance. Otherwise viewDidLoad
+        // can overwrite a color/size that was set while the view was still lazy.
+        [viewController view];
+    }
+
+    [self.floatingPreviewWindow setWindowLevel:[self overlayWindowLevel]];
+    [self applyFloatingPreviewAppearance];
+    return self.floatingPreviewWindow;
+}
+
+- (void)applyFloatingPreviewAppearance {
+    if (!self.floatingPreviewViewController) {
+        return;
+    }
+    [self.floatingPreviewViewController setDockedRight:self.floatingPreviewDockedRight];
+    [self.floatingPreviewViewController setVerticalPosition:self.floatingPreviewVerticalPosition];
+    [self.floatingPreviewViewController setHasCustomPosition:YES];
+    [self.floatingPreviewViewController applyBubbleDiameter:self.floatingPreviewSize
+                                                       color:self.floatingPreviewColor];
+}
+
+- (void)cancelFloatingPreviewExpiration {
+    dispatch_block_t expirationBlock = self.floatingPreviewExpirationBlock;
+    if (expirationBlock) {
+        dispatch_block_cancel(expirationBlock);
+        self.floatingPreviewExpirationBlock = nil;
+    }
+}
+
+- (void)hideFloatingPreviewAnimated:(BOOL)animated {
+    [self cancelFloatingPreviewExpiration];
+    self.floatingPreviewItem = nil;
+    NSUInteger displayToken = ++self.floatingPreviewDisplayToken;
+
+    UIWindow *window = self.floatingPreviewWindow;
+    KayokoFloatingPreviewViewController *viewController = self.floatingPreviewViewController;
+    if (!window || [window isHidden]) {
+        return;
+    }
+
+    void (^hide)(void) = ^{
+      [[viewController view] setAlpha:0.0];
+      [[viewController view] setTransform:CGAffineTransformMakeScale(0.82, 0.82)];
+      [window setHidden:YES];
+    };
+    if (!animated) {
+        hide();
+        return;
+    }
+
+    [UIView animateWithDuration:0.18
+        animations:^{
+          [[viewController view] setAlpha:0.0];
+          [[viewController view] setTransform:CGAffineTransformMakeScale(0.82, 0.82)];
+        }
+        completion:^(__unused BOOL finished) {
+          if (self.floatingPreviewDisplayToken == displayToken) {
+              hide();
+          }
+        }];
+}
+
+- (void)showFloatingPreviewForItem:(KayokoPasteboardItem *)item {
+    if (!item || !self.floatingPreview || !self.enabled || !self.mainViewController ||
+        ![self.mainViewController isHidden] || [self.mainViewController isEditingAnyContent]) {
+        return;
+    }
+
+    BOOL locked = NO;
+    if ([self readUILocked:&locked] && locked) {
+        return;
+    }
+
+    UIWindow *window = [self floatingPreviewWindowCreatingIfNeeded];
+    KayokoFloatingPreviewViewController *viewController = self.floatingPreviewViewController;
+    if (!window || !viewController) {
+        return;
+    }
+
+    // Re-apply the persisted appearance after the view has been materialized.
+    // This keeps the first display after SpringBoard relaunch identical to later displays.
+    [self applyFloatingPreviewAppearance];
+
+    [self cancelFloatingPreviewExpiration];
+    NSUInteger displayToken = ++self.floatingPreviewDisplayToken;
+    self.floatingPreviewItem = item;
+    UIImage *image = [UIImage systemImageNamed:item.imageName.length > 0 ? @"photo.fill" : @"doc.on.clipboard.fill"];
+    [viewController setPreviewImage:image];
+
+    // A transformed view has an undefined frame. Reset the root view before
+    // every geometry update, then animate only after its final layout is known.
+    UIView *floatingView = [viewController view];
+    [floatingView setTransform:CGAffineTransformIdentity];
+    UIWindowScene *windowScene = [window windowScene];
+    CGRect screenBounds = windowScene ? [[windowScene coordinateSpace] bounds] : [[UIScreen mainScreen] bounds];
+    screenBounds = CGRectMake(0.0, 0.0, CGRectGetWidth(screenBounds), CGRectGetHeight(screenBounds));
+    [window setFrame:screenBounds];
+    [floatingView setAutoresizingMask:UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight];
+    [floatingView setFrame:[window bounds]];
+    [floatingView.layer removeAllAnimations];
+    [UIView performWithoutAnimation:^{
+      [floatingView setNeedsLayout];
+      [floatingView layoutIfNeeded];
+      [floatingView setAlpha:0.0];
+      [floatingView setTransform:CGAffineTransformMakeScale(0.82, 0.82)];
+    }];
+    [window setHidden:NO];
+    [window bringSubviewToFront:[viewController view]];
+
+    [UIView animateWithDuration:0.18
+        animations:^{
+          [[viewController view] setAlpha:1.0];
+          [[viewController view] setTransform:CGAffineTransformIdentity];
+        }
+        completion:nil];
+
+    __weak typeof(self) weakSelf = self;
+    dispatch_block_t expirationBlock = dispatch_block_create(0, ^{
+      __strong typeof(weakSelf) strongSelf = weakSelf;
+      if (!strongSelf) {
+          return;
+      }
+      if (strongSelf.floatingPreviewDisplayToken != displayToken) {
+          return;
+      }
+      [strongSelf hideFloatingPreviewAnimated:YES];
+    });
+    self.floatingPreviewExpirationBlock = expirationBlock;
+    NSTimeInterval duration = MIN(MAX(self.floatingPreviewDuration,
+                                      kKayokoPreferenceKeyFloatingPreviewDurationMinimumValue),
+                                  kKayokoPreferenceKeyFloatingPreviewDurationMaximumValue);
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(duration * NSEC_PER_SEC)),
+                   dispatch_get_main_queue(), expirationBlock);
+}
+
+- (void)handleFloatingPreviewTap {
+    KayokoPasteboardItem *item = self.floatingPreviewItem;
+    if (!item) {
+        return;
+    }
+
+    [self hideFloatingPreviewAnimated:NO];
+    [self showQuickPreviewForItem:item];
 }
 
 - (void)applyOverlayWindowFrame:(UIWindow *)window {
@@ -660,7 +1052,12 @@ NS_ASSUME_NONNULL_END
         kKayokoPreferenceKeyEnabled : @(kKayokoPreferenceKeyEnabledDefaultValue),
         kKayokoPreferenceKeyActivationMethod : @(kKayokoPreferenceKeyActivationMethodDefaultValue),
         kKayokoPreferenceKeyPrivacyMode : @(kKayokoPreferenceKeyPrivacyModeDefaultValue),
-        kKayokoPreferenceKeyQuickPreview : @(kKayokoPreferenceKeyQuickPreviewDefaultValue),
+        kKayokoPreferenceKeyFloatingPreview : @(kKayokoPreferenceKeyFloatingPreviewDefaultValue),
+        kKayokoPreferenceKeyFloatingPreviewSize : @(kKayokoPreferenceKeyFloatingPreviewSizeDefaultValue),
+        kKayokoPreferenceKeyFloatingPreviewDuration : @(kKayokoPreferenceKeyFloatingPreviewDurationDefaultValue),
+        kKayokoPreferenceKeyFloatingPreviewColor : kKayokoPreferenceKeyFloatingPreviewColorDefaultValue,
+        kKayokoPreferenceKeyFloatingPreviewDockedRight : @(kKayokoPreferenceKeyFloatingPreviewDockedRightDefaultValue),
+        kKayokoPreferenceKeyFloatingPreviewVerticalPosition : @(kKayokoPreferenceKeyFloatingPreviewVerticalPositionDefaultValue),
         kKayokoPreferenceKeyImageDoubleTapActionURL : kKayokoPreferenceKeyImageDoubleTapActionURLDefaultValue,
         kKayokoPreferenceKeyGestureRecognizerMode : @(kKayokoPreferenceKeyGestureRecognizerModeDefaultValue),
         kKayokoPreferenceKeyMaximumHistoryAmount : @(kKayokoPreferenceKeyMaximumHistoryAmountDefaultValue),
@@ -689,7 +1086,33 @@ NS_ASSUME_NONNULL_END
     [self readPasteTipPreferencesFromPreferences:self.preferences];
     self.activationMethod = [[self.preferences objectForKey:kKayokoPreferenceKeyActivationMethod] unsignedIntegerValue];
     self.privacyMode = [[self.preferences objectForKey:kKayokoPreferenceKeyPrivacyMode] boolValue];
-    self.quickPreview = [[self.preferences objectForKey:kKayokoPreferenceKeyQuickPreview] boolValue];
+    self.floatingPreview = [[self.preferences objectForKey:kKayokoPreferenceKeyFloatingPreview] boolValue];
+    self.floatingPreviewSize = [[self.preferences objectForKey:kKayokoPreferenceKeyFloatingPreviewSize] doubleValue];
+    if (!isfinite(self.floatingPreviewSize)) {
+        self.floatingPreviewSize = kKayokoPreferenceKeyFloatingPreviewSizeDefaultValue;
+    }
+    self.floatingPreviewSize = MIN(MAX(self.floatingPreviewSize,
+                                       kKayokoPreferenceKeyFloatingPreviewSizeMinimumValue),
+                                   kKayokoPreferenceKeyFloatingPreviewSizeMaximumValue);
+    self.floatingPreviewDuration = [[self.preferences objectForKey:kKayokoPreferenceKeyFloatingPreviewDuration] doubleValue];
+    if (!isfinite(self.floatingPreviewDuration)) {
+        self.floatingPreviewDuration = kKayokoPreferenceKeyFloatingPreviewDurationDefaultValue;
+    }
+    self.floatingPreviewDuration = MIN(MAX(self.floatingPreviewDuration,
+                                           kKayokoPreferenceKeyFloatingPreviewDurationMinimumValue),
+                                       kKayokoPreferenceKeyFloatingPreviewDurationMaximumValue);
+    NSString *floatingPreviewColorHex = [self.preferences stringForKey:kKayokoPreferenceKeyFloatingPreviewColor];
+    self.floatingPreviewColor = KayokoFloatingPreviewColorFromHex(floatingPreviewColorHex);
+    self.floatingPreviewDockedRight = [[self.preferences objectForKey:kKayokoPreferenceKeyFloatingPreviewDockedRight] boolValue];
+    self.floatingPreviewVerticalPosition = [[self.preferences objectForKey:kKayokoPreferenceKeyFloatingPreviewVerticalPosition] doubleValue];
+    if (!isfinite(self.floatingPreviewVerticalPosition)) {
+        self.floatingPreviewVerticalPosition = kKayokoPreferenceKeyFloatingPreviewVerticalPositionDefaultValue;
+    }
+    self.floatingPreviewVerticalPosition = MIN(MAX(self.floatingPreviewVerticalPosition, 0.0), 1.0);
+    [self applyFloatingPreviewAppearance];
+    if (!self.enabled || !self.floatingPreview) {
+        [self hideFloatingPreviewAnimated:NO];
+    }
     self.gestureRecognizerMode =
         [[self.preferences objectForKey:kKayokoPreferenceKeyGestureRecognizerMode] unsignedIntegerValue];
     if (self.gestureRecognizerMode != kKayokoGestureRecognizerModeClassic &&
@@ -1069,10 +1492,11 @@ NS_ASSUME_NONNULL_END
           return;
       }
 
-      if (self.quickPreview && self.enabled && self.mainViewController && ![self.mainViewController isEditingAnyContent]) {
+      if (self.floatingPreview && self.enabled && self.mainViewController &&
+          ![self.mainViewController isEditingAnyContent]) {
           KayokoPasteboardItem *latestItem = [[KayokoPasteboardManager sharedInstance] getLatestHistoryItem];
           if (latestItem) {
-              [self showQuickPreviewForItem:latestItem];
+              [self showFloatingPreviewForItem:latestItem];
           }
       }
 
@@ -1123,6 +1547,8 @@ NS_ASSUME_NONNULL_END
         return;
     }
 
+    [self hideFloatingPreviewAnimated:NO];
+
     BOOL locked = NO;
     if ([self readUILocked:&locked] && locked) {
         [self playFailureHapticFeedbackIfNeeded];
@@ -1148,6 +1574,7 @@ NS_ASSUME_NONNULL_END
 }
 
 - (void)hideWithAnimationStyle:(KayokoPanelHideAnimationStyle)animationStyle {
+    [self hideFloatingPreviewAnimated:NO];
     if (self.mainViewController && ![self.mainViewController isHidden]) {
         [self.mainViewController hideWithAnimationStyle:animationStyle completion:nil];
     }
@@ -1177,6 +1604,7 @@ NS_ASSUME_NONNULL_END
 }
 
 - (void)hideImmediately {
+    [self hideFloatingPreviewAnimated:NO];
     if (self.mainViewController && ![self.mainViewController isHidden]) {
         [self.mainViewController hideImmediately];
     }

@@ -60,7 +60,13 @@
 "Preview Lines" = "预览行数";
 "Previous" = "先前的选择";
 "Privacy Mode" = "隐私模式";
-"Quick Preview" = "快速预览";
+"Floating Preview" = "悬浮预览";
+"Enable Floating Preview" = "启用悬浮预览";
+"Size" = "大小";
+"Floating Duration" = "悬浮时间";
+"Color" = "颜色";
+"Preview" = "预览";
+"The floating preview is always semi-transparent and stays fully visible at the screen edge." = "悬浮球始终保持半透明，并完整显示在屏幕边缘内。";
 "Purchase Kayoko on Havoc Marketplace to support ongoing OwnGoal Studio maintenance." = "在浩劫商店购买 Kayoko，支持乌龙工作室版后续的维护";
 "Respring" = "注销";
 "Respring Now" = "立即重启";

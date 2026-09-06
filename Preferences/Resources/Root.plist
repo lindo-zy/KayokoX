@@ -60,17 +60,13 @@
 		</dict>
 		<dict>
 			<key>cell</key>
-			<string>PSSwitchCell</string>
-			<key>default</key>
-			<false/>
+			<string>PSLinkCell</string>
+			<key>detail</key>
+			<string>KayokoFloatingPreviewSettingsViewController</string>
 			<key>defaults</key>
 			<string>com.mlgm.kayoko.preferences</string>
-			<key>key</key>
-			<string>QuickPreview</string>
 			<key>label</key>
-			<string>Quick Preview</string>
-			<key>PostNotification</key>
-			<string>com.mlgm.kayoko.preferences.reload</string>
+			<string>Floating Preview</string>
 		</dict>
 
 		<dict>

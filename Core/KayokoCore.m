@@ -169,7 +169,11 @@ static void kayokoCorePreferencesReloadCallback(CFNotificationCenterRef center, 
     (void)name;
     (void)object;
     (void)userInfo;
-    [[KayokoCoreRuntime sharedRuntime] loadPreferences];
+    // Darwin notifications may be delivered off the main thread. Preference reloads
+    // update UIKit-owned windows and controllers, so serialize the work on main.
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [[KayokoCoreRuntime sharedRuntime] loadPreferences];
+    });
 }
 
 static void kayokoCoreHeightPreferenceReloadCallback(CFNotificationCenterRef center, void *observer, CFStringRef name,

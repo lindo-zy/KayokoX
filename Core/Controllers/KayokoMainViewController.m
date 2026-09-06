@@ -2846,6 +2846,7 @@ NS_ASSUME_NONNULL_END
     }
 
     NSString *historyKey = [self effectiveActiveHistoryKey];
+    BOOL isQuickPreview = contentItem != nil;
     [self reloadTableViewForHistoryKey:historyKey
                 animatingTopInsertions:NO
                             completion:^(KayokoHistoryListView *tableView) {
@@ -2868,7 +2869,14 @@ NS_ASSUME_NONNULL_END
                                               completion:nil];
                               }
                               [[self panelPresentationController] showPanelWithCompletion:^{
-                                [self executePendingExternalHideRequestIfReady];
+                                if (isQuickPreview) {
+                                    // A host app can emit a transient window/keyboard hide notification
+                                    // while the quick-preview panel is being prepared. It must not close
+                                    // the panel immediately after it becomes visible.
+                                    [self clearExternalHideCoordinator];
+                                } else {
+                                    [self executePendingExternalHideRequestIfReady];
+                                }
                                 if (completion) {
                                     completion();
                                 }
