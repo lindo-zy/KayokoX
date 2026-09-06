@@ -1,6 +1,6 @@
 Package: com.lindo.kayokox
 Name: KayokoX
-Version: 5.0.2
+Version: 5.0.3
 Architecture: iphoneos-arm
 Description: 功能丰富的剪切板管理器，基于 Kayoko (乌龙版本+mlgm) 进行修改
 Maintainer: lindo

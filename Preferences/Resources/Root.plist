@@ -15,7 +15,7 @@
 			<key>cellClass</key>
 			<string>KayokoHeaderCell</string>
 			<key>headerTitle</key>
-			<string>Kayoko</string>
+			<string>KayokoX</string>
 			<key>headerSubtitle</key>
 			<string>Feature-rich clipboard manager for iOS.</string>
 			<key>height</key>
@@ -31,7 +31,7 @@
 			<key>key</key>
 			<string>Enabled</string>
 			<key>label</key>
-			<string>Enable Kayoko</string>
+			<string>Enable KayokoX</string>
             <key>PostNotification</key>
 			<string>com.mlgm.kayoko.preferences.reload</string>
 		</dict>
@@ -339,7 +339,7 @@
 			<key>cell</key>
 			<string>PSButtonCell</string>
 			<key>label</key>
-			<string>Show Kayoko</string>
+			<string>Show KayokoX</string>
 			<key>action</key>
 			<string>showKayoko</string>
 		</dict>
@@ -656,6 +656,6 @@
 
 	</array>
 	<key>title</key>
-	<string>Kayoko</string>
+	<string>KayokoX</string>
 </dict>
 </plist>
