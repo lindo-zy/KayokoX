@@ -29,6 +29,8 @@
 		10E356CF5C02B30CD10DDB4C /* KayokoHeaderView.m in Sources */ = {isa = PBXBuildFile; fileRef = 380B84700583BFF37E85E4B7 /* KayokoHeaderView.m */; };
 		1118D380811EB9A41654C501 /* KayokoSystemTranslationPresenter.m in Sources */ = {isa = PBXBuildFile; fileRef = 64485E9167DD22597C3392AB /* KayokoSystemTranslationPresenter.m */; };
 		11F3BDAB97F38924FC0516F4 /* KayokoHistoryItemActionHandler.m in Sources */ = {isa = PBXBuildFile; fileRef = 3E17F8CA7D4DE3DF0171A788 /* KayokoHistoryItemActionHandler.m */; };
+		F1A2B3C4D5E60718293A4B5E /* KayokoQuickAction.h in Headers */ = {isa = PBXBuildFile; fileRef = F1A2B3C4D5E60718293A4B5C /* KayokoQuickAction.h */; settings = {ATTRIBUTES = (Public, ); }; };
+		F1A2B3C4D5E60718293A4B5F /* KayokoQuickAction.m in Sources */ = {isa = PBXBuildFile; fileRef = F1A2B3C4D5E60718293A4B5D /* KayokoQuickAction.m */; };
 		145D2A2C516BC59772F4B743 /* KayokoTagTableViewCell.m in Sources */ = {isa = PBXBuildFile; fileRef = 11E75E627E502213B1E2942C /* KayokoTagTableViewCell.m */; };
 		15F24563C7DE44D11D0B1580 /* KayokoTableViewCellContent.h in Headers */ = {isa = PBXBuildFile; fileRef = EB9B9D20D062CD3B287A30D7 /* KayokoTableViewCellContent.h */; settings = {ATTRIBUTES = (Public, ); }; };
 		16C2997AB7E0BCC8B7595821 /* CoreGraphics.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 60807AAA40AFC717167F32FF /* CoreGraphics.framework */; };
@@ -324,6 +326,8 @@
 		4262F6D07BF7C56A6D0FA0CA /* KayokoHistoryListView.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = KayokoHistoryListView.m; sourceTree = "<group>"; };
 		4330035115DE38F3881ACE34 /* KayokoRichTextRepresentation.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = KayokoRichTextRepresentation.h; sourceTree = "<group>"; };
 		434A7B24A98FA3ACCA17D884 /* KayokoHistoryItemActionHandler.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = KayokoHistoryItemActionHandler.h; sourceTree = "<group>"; };
+		F1A2B3C4D5E60718293A4B5C /* KayokoQuickAction.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = KayokoQuickAction.h; sourceTree = "<group>"; };
+		F1A2B3C4D5E60718293A4B5D /* KayokoQuickAction.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = KayokoQuickAction.m; sourceTree = "<group>"; };
 		46AEB1CBA0DEF7D7588472DA /* KayokoPasteboardItem.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = KayokoPasteboardItem.m; sourceTree = "<group>"; };
 		4A353CDB359523F78AB246F5 /* KayokoSearchTokenCollectionView.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = KayokoSearchTokenCollectionView.h; sourceTree = "<group>"; };
 		4F159528372065006DC14C58 /* Security.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Security.framework; path = System/Library/Frameworks/Security.framework; sourceTree = SDKROOT; };
@@ -635,6 +639,8 @@
 			children = (
 				434A7B24A98FA3ACCA17D884 /* KayokoHistoryItemActionHandler.h */,
 				3E17F8CA7D4DE3DF0171A788 /* KayokoHistoryItemActionHandler.m */,
+				F1A2B3C4D5E60718293A4B5C /* KayokoQuickAction.h */,
+				F1A2B3C4D5E60718293A4B5D /* KayokoQuickAction.m */,
 			);
 			path = Actions;
 			sourceTree = "<group>";
@@ -998,6 +1004,7 @@
 				B8872F0A09AB519470A9345B /* KayokoHistoryChangeNotifier.h in Headers */,
 				00B057251AD098ADA7EAB059 /* KayokoHistoryController.h in Headers */,
 				0D694D07DA9279697C486207 /* KayokoHistoryItemActionHandler.h in Headers */,
+				F1A2B3C4D5E60718293A4B5E /* KayokoQuickAction.h in Headers */,
 				9517C0E41CF4017FBE3F1296 /* KayokoHistoryListView.h in Headers */,
 				F9EF4DA43500DBFDC6A7A127 /* KayokoHistoryListViewController.h in Headers */,
 				CAE5CBCCCB8E769909521FE3 /* KayokoHistoryMigrator.h in Headers */,
@@ -1287,6 +1294,7 @@
 				6AAEBD449CB5D96989F33367 /* KayokoHistoryChangeNotifier.m in Sources */,
 				D8577BA22A45755FF2F1BCEA /* KayokoHistoryController.m in Sources */,
 				11F3BDAB97F38924FC0516F4 /* KayokoHistoryItemActionHandler.m in Sources */,
+				F1A2B3C4D5E60718293A4B5F /* KayokoQuickAction.m in Sources */,
 				1AD7B9898E1168F1BB85E878 /* KayokoHistoryListView.m in Sources */,
 				B499B16869070725259D0E39 /* KayokoHistoryListViewController.m in Sources */,
 				6E13BFB163A55BF3E4712553 /* KayokoHistoryMigrator.m in Sources */,

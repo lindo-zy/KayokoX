@@ -12,6 +12,7 @@
 #import "KayokoPasteboardManager.h"
 #import "KayokoPasteboardItem.h"
 #import "KayokoPreferenceKeys.h"
+#import "KayokoQuickAction.h"
 
 #import <AVFoundation/AVFoundation.h>
 #import <AudioToolbox/AudioToolbox.h>
@@ -141,8 +142,11 @@ NS_ASSUME_NONNULL_END
 
 @property(nonatomic, strong) UIButton *button;
 @property(nonatomic, strong) UIPanGestureRecognizer *panGestureRecognizer;
+@property(nonatomic, strong) UITapGestureRecognizer *doubleTapGestureRecognizer;
 @property(nonatomic, copy, nullable) void (^tapHandler)(void);
+@property(nonatomic, copy, nullable) void (^doubleTapHandler)(void);
 @property(nonatomic, copy, nullable) void (^positionChangedHandler)(BOOL dockedRight, CGFloat verticalPosition);
+@property(nonatomic, assign) BOOL doubleTapEnabled;
 @property(nonatomic, assign) BOOL hasCustomPosition;
 @property(nonatomic, assign) BOOL dockedRight;
 @property(nonatomic, assign) CGFloat verticalPosition;
@@ -189,14 +193,22 @@ static CGFloat const kKayokoFloatingPreviewVerticalEdgeInset = 12.0;
     UITapGestureRecognizer *tapGestureRecognizer =
         [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(buttonTapped:)];
     [button addGestureRecognizer:tapGestureRecognizer];
+    UITapGestureRecognizer *doubleTapGestureRecognizer =
+        [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(buttonDoubleTapped:)];
+    [doubleTapGestureRecognizer setNumberOfTapsRequired:2];
+    [doubleTapGestureRecognizer setEnabled:[self doubleTapEnabled]];
+    [button addGestureRecognizer:doubleTapGestureRecognizer];
     UIPanGestureRecognizer *panGestureRecognizer =
         [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(handlePanGestureRecognizer:)];
     [panGestureRecognizer setCancelsTouchesInView:NO];
     [button addGestureRecognizer:panGestureRecognizer];
     [tapGestureRecognizer requireGestureRecognizerToFail:panGestureRecognizer];
+    [tapGestureRecognizer requireGestureRecognizerToFail:doubleTapGestureRecognizer];
+    [doubleTapGestureRecognizer requireGestureRecognizerToFail:panGestureRecognizer];
     [[self view] addSubview:button];
     [self setButton:button];
     [self setPanGestureRecognizer:panGestureRecognizer];
+    [self setDoubleTapGestureRecognizer:doubleTapGestureRecognizer];
 }
 
 - (void)viewDidLayoutSubviews {
@@ -296,6 +308,22 @@ static CGFloat const kKayokoFloatingPreviewVerticalEdgeInset = 12.0;
     }
 }
 
+- (void)buttonDoubleTapped:(UITapGestureRecognizer *)recognizer {
+    (void)recognizer;
+    if (![self doubleTapEnabled] || [self didMoveDuringPan]) {
+        [self setDidMoveDuringPan:NO];
+        return;
+    }
+    if ([self doubleTapHandler]) {
+        [self doubleTapHandler]();
+    }
+}
+
+- (void)setDoubleTapEnabled:(BOOL)doubleTapEnabled {
+    _doubleTapEnabled = doubleTapEnabled;
+    [[self doubleTapGestureRecognizer] setEnabled:doubleTapEnabled];
+}
+
 @end
 
 @implementation KayokoPasteSuppressionState
@@ -356,7 +384,7 @@ static CGFloat const kKayokoFloatingPreviewVerticalEdgeInset = 12.0;
 
 NS_ASSUME_NONNULL_BEGIN
 
-@interface KayokoCoreRuntime () <KayokoMainViewControllerDelegate>
+@interface KayokoCoreRuntime () <KayokoMainViewControllerDelegate, UIGestureRecognizerDelegate>
 
 #pragma mark - Runtime Configuration
 
@@ -364,6 +392,7 @@ NS_ASSUME_NONNULL_BEGIN
 @property(nonatomic, assign, readwrite) NSUInteger activationMethod;
 @property(nonatomic, assign) BOOL privacyMode;
 @property(nonatomic, assign) BOOL floatingPreview;
+@property(nonatomic, assign) BOOL floatingPreviewDoubleTapAction;
 @property(nonatomic, assign) CGFloat floatingPreviewSize;
 @property(nonatomic, assign) CGFloat floatingPreviewDuration;
 @property(nonatomic, strong) UIColor *floatingPreviewColor;
@@ -382,6 +411,7 @@ NS_ASSUME_NONNULL_BEGIN
 @property(nonatomic, strong, nullable) KayokoFloatingPreviewViewController *floatingPreviewViewController;
 @property(nonatomic, strong, nullable) KayokoPasteboardItem *floatingPreviewItem;
 @property(nonatomic, copy, nullable) dispatch_block_t floatingPreviewExpirationBlock;
+@property(nonatomic, strong, nullable) UITapGestureRecognizer *floatingPreviewActionOutsideTapRecognizer;
 @property(nonatomic, assign) NSUInteger floatingPreviewDisplayToken;
 @property(nonatomic, assign) KayokoPanelPresentationMode activePresentationMode;
 @property(nonatomic, assign) BOOL pendingHeightPreferenceApply;
@@ -435,6 +465,12 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)showFloatingPreviewForItem:(KayokoPasteboardItem *)item;
 - (void)hideFloatingPreviewAnimated:(BOOL)animated;
 - (void)handleFloatingPreviewTap;
+- (void)handleFloatingPreviewDoubleTap;
+- (void)presentFloatingPreviewActionsForItem:(KayokoPasteboardItem *)item;
+- (void)openFloatingPreviewAction:(NSDictionary<NSString *, id> *)action
+                          forItem:(KayokoPasteboardItem *)item;
+- (void)handleFloatingPreviewActionOutsideTap:(UITapGestureRecognizer *)gestureRecognizer;
+- (void)removeFloatingPreviewActionOutsideTapRecognizer;
 - (void)cancelFloatingPreviewExpiration;
 - (void)applyFloatingPreviewAppearance;
 
@@ -655,6 +691,9 @@ NS_ASSUME_NONNULL_END
         [viewController setTapHandler:^{
           [weakSelf handleFloatingPreviewTap];
         }];
+        [viewController setDoubleTapHandler:^{
+          [weakSelf handleFloatingPreviewDoubleTap];
+        }];
         [viewController setPositionChangedHandler:^(BOOL dockedRight, CGFloat verticalPosition) {
           __strong typeof(weakSelf) strongSelf = weakSelf;
           if (!strongSelf) {
@@ -687,6 +726,7 @@ NS_ASSUME_NONNULL_END
     [self.floatingPreviewViewController setDockedRight:self.floatingPreviewDockedRight];
     [self.floatingPreviewViewController setVerticalPosition:self.floatingPreviewVerticalPosition];
     [self.floatingPreviewViewController setHasCustomPosition:YES];
+    [self.floatingPreviewViewController setDoubleTapEnabled:self.floatingPreviewDoubleTapAction];
     [self.floatingPreviewViewController applyBubbleDiameter:self.floatingPreviewSize
                                                        color:self.floatingPreviewColor];
 }
@@ -701,6 +741,7 @@ NS_ASSUME_NONNULL_END
 
 - (void)hideFloatingPreviewAnimated:(BOOL)animated {
     [self cancelFloatingPreviewExpiration];
+    [self removeFloatingPreviewActionOutsideTapRecognizer];
     self.floatingPreviewItem = nil;
     NSUInteger displayToken = ++self.floatingPreviewDisplayToken;
 
@@ -709,6 +750,11 @@ NS_ASSUME_NONNULL_END
     if (!window || [window isHidden]) {
         return;
     }
+
+    if ([viewController presentedViewController]) {
+        [viewController dismissViewControllerAnimated:NO completion:nil];
+    }
+    [[viewController button] setHidden:NO];
 
     void (^hide)(void) = ^{
       [[viewController view] setAlpha:0.0];
@@ -756,6 +802,7 @@ NS_ASSUME_NONNULL_END
     [self cancelFloatingPreviewExpiration];
     NSUInteger displayToken = ++self.floatingPreviewDisplayToken;
     self.floatingPreviewItem = item;
+    [[viewController button] setHidden:NO];
     UIImage *image = [UIImage systemImageNamed:item.imageName.length > 0 ? @"photo.fill" : @"doc.on.clipboard.fill"];
     [viewController setPreviewImage:image];
 
@@ -813,6 +860,135 @@ NS_ASSUME_NONNULL_END
 
     [self hideFloatingPreviewAnimated:NO];
     [self showQuickPreviewForItem:item];
+}
+
+- (void)handleFloatingPreviewDoubleTap {
+    if (![self floatingPreviewDoubleTapAction]) {
+        return;
+    }
+
+    KayokoPasteboardItem *item = self.floatingPreviewItem;
+    if (!item) {
+        return;
+    }
+
+    [self presentFloatingPreviewActionsForItem:item];
+}
+
+- (void)presentFloatingPreviewActionsForItem:(KayokoPasteboardItem *)item {
+    BOOL isImageItem = [[item imageName] length] > 0;
+    KayokoQuickActionKind kind = isImageItem ? KayokoQuickActionKindImage : KayokoQuickActionKindText;
+    NSArray<NSDictionary<NSString *, id> *> *actions = [KayokoQuickAction actionsForKind:kind];
+    if ([actions count] == 0) {
+        return;
+    }
+
+    [self cancelFloatingPreviewExpiration];
+    if ([actions count] == 1) {
+        [self openFloatingPreviewAction:[actions firstObject] forItem:item];
+        return;
+    }
+
+    KayokoFloatingPreviewViewController *viewController = self.floatingPreviewViewController;
+    UIWindow *window = self.floatingPreviewWindow;
+    if (!viewController || !window || [window isHidden] || [viewController presentedViewController]) {
+        return;
+    }
+
+    [[viewController button] setHidden:YES];
+    NSBundle *bundle = [KayokoPasteboardManager localizationBundle];
+    NSString *titleKey = isImageItem ? @"Image Actions" : @"Custom Jumps";
+    NSString *title = [bundle localizedStringForKey:titleKey value:titleKey table:@"CustomJumps"];
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:title
+                                                                     message:nil
+                                                              preferredStyle:UIAlertControllerStyleAlert];
+    __weak typeof(self) weakSelf = self;
+    for (NSDictionary<NSString *, id> *action in actions) {
+        NSDictionary<NSString *, id> *actionToOpen = [action copy];
+        [alert addAction:[UIAlertAction actionWithTitle:actionToOpen[@"title"]
+                                                   style:UIAlertActionStyleDefault
+                                                 handler:^(__unused UIAlertAction *selectedAction) {
+                                                   [weakSelf openFloatingPreviewAction:actionToOpen forItem:item];
+                                                 }]];
+    }
+
+    NSString *cancelTitle = [bundle localizedStringForKey:@"Cancel" value:@"取消" table:@"CustomJumps"];
+    [alert addAction:[UIAlertAction actionWithTitle:cancelTitle
+                                               style:UIAlertActionStyleCancel
+                                             handler:^(__unused UIAlertAction *selectedAction) {
+                                               [weakSelf hideFloatingPreviewAnimated:NO];
+                                             }]];
+    [viewController presentViewController:alert
+                                 animated:YES
+                               completion:^{
+                                 __strong typeof(weakSelf) strongSelf = weakSelf;
+                                 if (!strongSelf || [viewController presentedViewController] != alert) {
+                                     return;
+                                 }
+                                 UITapGestureRecognizer *outsideTapRecognizer = [[UITapGestureRecognizer alloc]
+                                     initWithTarget:strongSelf
+                                            action:@selector(handleFloatingPreviewActionOutsideTap:)];
+                                 [outsideTapRecognizer setCancelsTouchesInView:NO];
+                                 [outsideTapRecognizer setDelegate:strongSelf];
+                                 [window addGestureRecognizer:outsideTapRecognizer];
+                                 [strongSelf setFloatingPreviewActionOutsideTapRecognizer:outsideTapRecognizer];
+                               }];
+}
+
+- (void)handleFloatingPreviewActionOutsideTap:(UITapGestureRecognizer *)gestureRecognizer {
+    if ([gestureRecognizer state] == UIGestureRecognizerStateEnded) {
+        [self hideFloatingPreviewAnimated:NO];
+    }
+}
+
+- (BOOL)gestureRecognizer:(UIGestureRecognizer *)gestureRecognizer shouldReceiveTouch:(UITouch *)touch {
+    if (gestureRecognizer != [self floatingPreviewActionOutsideTapRecognizer]) {
+        return YES;
+    }
+
+    UIView *presentedView = [[[self floatingPreviewViewController] presentedViewController] view];
+    UIView *touchedView = [touch view];
+    return !presentedView || ![touchedView isDescendantOfView:presentedView];
+}
+
+- (void)removeFloatingPreviewActionOutsideTapRecognizer {
+    UITapGestureRecognizer *recognizer = [self floatingPreviewActionOutsideTapRecognizer];
+    if (!recognizer) {
+        return;
+    }
+    [[recognizer view] removeGestureRecognizer:recognizer];
+    [self setFloatingPreviewActionOutsideTapRecognizer:nil];
+}
+
+- (void)openFloatingPreviewAction:(NSDictionary<NSString *, id> *)action
+                          forItem:(KayokoPasteboardItem *)item {
+    BOOL isImageItem = [[item imageName] length] > 0;
+    NSURL *URL = [KayokoQuickAction URLForAction:action input:isImageItem ? @"" : ([item content] ?: @"")];
+    if (!URL) {
+        [self hideFloatingPreviewAnimated:NO];
+        [self playFailureHapticFeedbackIfNeeded];
+        return;
+    }
+    if (isImageItem) {
+        if (![[KayokoPasteboardManager sharedInstance] copyPasteboardItemToPasteboard:item]) {
+            [self hideFloatingPreviewAnimated:NO];
+            [self playFailureHapticFeedbackIfNeeded];
+            return;
+        }
+        // The image action intentionally writes the existing item back to the
+        // pasteboard. Do not treat that internal write as a new floating preview.
+        [self.pasteSuppressionState beginWithExpirationDelay:kKayokoPasteSuppressionExpirationDelay];
+    }
+
+    [self hideFloatingPreviewAnimated:NO];
+    __weak typeof(self) weakSelf = self;
+    [[UIApplication sharedApplication] openURL:URL
+                                       options:@{}
+                             completionHandler:^(BOOL success) {
+                               if (!success) {
+                                   [weakSelf playFailureHapticFeedbackIfNeeded];
+                               }
+                             }];
 }
 
 - (void)applyOverlayWindowFrame:(UIWindow *)window {
@@ -1053,6 +1229,7 @@ NS_ASSUME_NONNULL_END
         kKayokoPreferenceKeyActivationMethod : @(kKayokoPreferenceKeyActivationMethodDefaultValue),
         kKayokoPreferenceKeyPrivacyMode : @(kKayokoPreferenceKeyPrivacyModeDefaultValue),
         kKayokoPreferenceKeyFloatingPreview : @(kKayokoPreferenceKeyFloatingPreviewDefaultValue),
+        kKayokoPreferenceKeyFloatingPreviewDoubleTapAction : @(kKayokoPreferenceKeyFloatingPreviewDoubleTapActionDefaultValue),
         kKayokoPreferenceKeyFloatingPreviewSize : @(kKayokoPreferenceKeyFloatingPreviewSizeDefaultValue),
         kKayokoPreferenceKeyFloatingPreviewDuration : @(kKayokoPreferenceKeyFloatingPreviewDurationDefaultValue),
         kKayokoPreferenceKeyFloatingPreviewColor : kKayokoPreferenceKeyFloatingPreviewColorDefaultValue,
@@ -1087,6 +1264,8 @@ NS_ASSUME_NONNULL_END
     self.activationMethod = [[self.preferences objectForKey:kKayokoPreferenceKeyActivationMethod] unsignedIntegerValue];
     self.privacyMode = [[self.preferences objectForKey:kKayokoPreferenceKeyPrivacyMode] boolValue];
     self.floatingPreview = [[self.preferences objectForKey:kKayokoPreferenceKeyFloatingPreview] boolValue];
+    self.floatingPreviewDoubleTapAction =
+        [[self.preferences objectForKey:kKayokoPreferenceKeyFloatingPreviewDoubleTapAction] boolValue];
     self.floatingPreviewSize = [[self.preferences objectForKey:kKayokoPreferenceKeyFloatingPreviewSize] doubleValue];
     if (!isfinite(self.floatingPreviewSize)) {
         self.floatingPreviewSize = kKayokoPreferenceKeyFloatingPreviewSizeDefaultValue;

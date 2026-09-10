@@ -66,6 +66,7 @@ static NSString *const kKayokoPreferenceKeySwipeToSelectWords = @"SwipeToSelectW
 static NSString *const kKayokoPreferenceKeyActivationMethod = @"ActivationMethod";
 static NSString *const kKayokoPreferenceKeyPrivacyMode = @"PrivacyMode";
 static NSString *const kKayokoPreferenceKeyFloatingPreview = @"FloatingPreview";
+static NSString *const kKayokoPreferenceKeyFloatingPreviewDoubleTapAction = @"FloatingPreviewDoubleTapAction";
 static NSString *const kKayokoPreferenceKeyFloatingPreviewSize = @"FloatingPreviewSize";
 static NSString *const kKayokoPreferenceKeyFloatingPreviewDuration = @"FloatingPreviewDuration";
 static NSString *const kKayokoPreferenceKeyFloatingPreviewColor = @"FloatingPreviewColor";
@@ -104,6 +105,7 @@ static ActivationMethod const kKayokoPreferenceKeyActivationMethodDefaultValue =
     kActivationMethodDictationKey | kActivationMethodInputSwitcher | kActivationMethodExternalKeyboard;
 static BOOL const kKayokoPreferenceKeyPrivacyModeDefaultValue = NO;
 static BOOL const kKayokoPreferenceKeyFloatingPreviewDefaultValue = NO;
+static BOOL const kKayokoPreferenceKeyFloatingPreviewDoubleTapActionDefaultValue = NO;
 static CGFloat const kKayokoPreferenceKeyFloatingPreviewSizeDefaultValue = 64.0;
 static CGFloat const kKayokoPreferenceKeyFloatingPreviewSizeMinimumValue = 44.0;
 static CGFloat const kKayokoPreferenceKeyFloatingPreviewSizeMaximumValue = 108.0;

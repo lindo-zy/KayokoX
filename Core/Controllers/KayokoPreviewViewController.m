@@ -13,14 +13,11 @@
 #import "KayokoPasteboardManager.h"
 #import "KayokoPreferenceKeys.h"
 #import "KayokoPreviewView.h"
-
-#import <roothide.h>
+#import "KayokoQuickAction.h"
 
 static NSString *kayokoPreviewTextByTrimmingBoundaryNewlines(NSString *text) {
     return [(text ?: @"") stringByTrimmingCharactersInSet:[NSCharacterSet newlineCharacterSet]];
 }
-
-static NSString *const kKayokoImageActionStorePath = @"/var/mobile/Library/com.mlgm.kayoko/image-actions-v1.plist";
 
 NS_ASSUME_NONNULL_BEGIN
 
@@ -338,33 +335,7 @@ NS_ASSUME_NONNULL_END
 }
 
 - (NSArray<NSDictionary<NSString *, id> *> *)loadImageActions {
-    NSData *data = [NSData dataWithContentsOfFile:jbroot(kKayokoImageActionStorePath)];
-    if (!data) {
-        return @[];
-    }
-
-    NSPropertyListFormat format = NSPropertyListXMLFormat_v1_0;
-    id propertyList = [NSPropertyListSerialization propertyListWithData:data
-                                                                  options:NSPropertyListImmutable
-                                                                   format:&format
-                                                                    error:nil];
-    if (![propertyList isKindOfClass:[NSArray class]]) {
-        return @[];
-    }
-
-    NSMutableArray<NSDictionary<NSString *, id> *> *actions = [[NSMutableArray alloc] init];
-    for (id item in (NSArray *)propertyList) {
-        if (![item isKindOfClass:[NSDictionary class]]) {
-            continue;
-        }
-        NSString *title = item[@"title"];
-        NSString *link = item[@"link"];
-        if (![title isKindOfClass:[NSString class]] || ![link isKindOfClass:[NSString class]] || [title length] == 0) {
-            continue;
-        }
-        [actions addObject:@{ @"title" : title, @"link" : link }];
-    }
-    return [actions copy];
+    return [KayokoQuickAction actionsForKind:KayokoQuickActionKindImage];
 }
 
 - (void)openImageAction:(NSDictionary<NSString *, id> *)action {
@@ -374,17 +345,7 @@ NS_ASSUME_NONNULL_END
         return;
     }
 
-    NSString *link = action[@"link"];
-    if (![link isKindOfClass:[NSString class]]) {
-        [self showActionFailureToast];
-        return;
-    }
-    link = [link stringByReplacingOccurrencesOfString:@"$$$" withString:@""];
-    if ([link length] == 0) {
-        [self showActionFailureToast];
-        return;
-    }
-    NSURL *URL = [NSURL URLWithString:link];
+    NSURL *URL = [KayokoQuickAction URLForAction:action input:@""];
     if (!URL) {
         [self showActionFailureToast];
         return;

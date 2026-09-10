@@ -10,14 +10,11 @@
 #import "KayokoActivitySharePresenter.h"
 #import "KayokoPasteboardItem.h"
 #import "KayokoPasteboardManager.h"
+#import "KayokoQuickAction.h"
 #import "KayokoSystemTranslationPresenter.h"
 #import "KayokoWordSelectionView.h"
 
-#import <roothide.h>
-
 static NSUInteger const kKayokoWordSelectionMaximumTextLength = 5000;
-static NSString *const kKayokoTextActionStorePath = @"/var/mobile/Library/com.mlgm.kayoko/custom-jumps-v1.plist";
-
 static NSString *kayokoWordSelectionTextByTrimmingBoundaryNewlines(NSString *text) {
     return [(text ?: @"") stringByTrimmingCharactersInSet:[NSCharacterSet newlineCharacterSet]];
 }
@@ -40,7 +37,6 @@ NS_ASSUME_NONNULL_BEGIN
 @property(nonatomic, assign) NSUInteger actionFailureToastRequestIdentifier;
 - (NSArray<NSDictionary<NSString *, id> *> *)loadTextActions;
 - (void)openTextAction:(NSDictionary<NSString *, id> *)action;
-- (NSString *)percentEncodedActionValue:(NSString *)value;
 - (void)showActionFailureToast;
 @end
 
@@ -395,50 +391,12 @@ NS_ASSUME_NONNULL_END
 }
 
 - (NSArray<NSDictionary<NSString *, id> *> *)loadTextActions {
-    NSData *data = [NSData dataWithContentsOfFile:jbroot(kKayokoTextActionStorePath)];
-    if (!data) {
-        return @[];
-    }
-
-    NSPropertyListFormat format = NSPropertyListXMLFormat_v1_0;
-    id propertyList = [NSPropertyListSerialization propertyListWithData:data
-                                                                  options:NSPropertyListImmutable
-                                                                   format:&format
-                                                                    error:nil];
-    if (![propertyList isKindOfClass:[NSArray class]]) {
-        return @[];
-    }
-
-    NSMutableArray<NSDictionary<NSString *, id> *> *actions = [[NSMutableArray alloc] init];
-    for (id item in (NSArray *)propertyList) {
-        if (![item isKindOfClass:[NSDictionary class]]) {
-            continue;
-        }
-        NSString *title = item[@"title"];
-        NSString *link = item[@"link"];
-        if (![title isKindOfClass:[NSString class]] || ![link isKindOfClass:[NSString class]] || [title length] == 0) {
-            continue;
-        }
-        [actions addObject:@{ @"title" : title, @"link" : link }];
-    }
-    return [actions copy];
+    return [KayokoQuickAction actionsForKind:KayokoQuickActionKindText];
 }
 
 - (void)openTextAction:(NSDictionary<NSString *, id> *)action {
-    NSString *link = action[@"link"];
-    if (![link isKindOfClass:[NSString class]]) {
-        [self showActionFailureToast];
-        return;
-    }
-
     NSString *selectedText = [self selectedText] ?: @"";
-    NSString *encodedText = [self percentEncodedActionValue:selectedText];
-    link = [link stringByReplacingOccurrencesOfString:@"$$$" withString:encodedText];
-    if ([link length] == 0) {
-        [self showActionFailureToast];
-        return;
-    }
-    NSURL *URL = [NSURL URLWithString:link];
+    NSURL *URL = [KayokoQuickAction URLForAction:action input:selectedText];
     if (!URL) {
         [self showActionFailureToast];
         return;
@@ -455,15 +413,6 @@ NS_ASSUME_NONNULL_END
                                  [weakSelf showActionFailureToast];
                                });
                              }];
-}
-
-- (NSString *)percentEncodedActionValue:(NSString *)value {
-    NSMutableCharacterSet *allowedCharacters = [[NSCharacterSet alphanumericCharacterSet] mutableCopy];
-    [allowedCharacters addCharactersInRange:NSMakeRange('-', 1)];
-    [allowedCharacters addCharactersInRange:NSMakeRange('.', 1)];
-    [allowedCharacters addCharactersInRange:NSMakeRange('_', 1)];
-    [allowedCharacters addCharactersInRange:NSMakeRange('~', 1)];
-    return [value stringByAddingPercentEncodingWithAllowedCharacters:allowedCharacters] ?: @"";
 }
 
 - (void)showActionFailureToast {

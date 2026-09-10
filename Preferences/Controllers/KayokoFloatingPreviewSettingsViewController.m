@@ -66,6 +66,7 @@
 
 @property(nonatomic, strong) UITableView *tableView;
 @property(nonatomic, strong) UISwitch *enabledSwitch;
+@property(nonatomic, strong) UISwitch *doubleTapActionSwitch;
 @property(nonatomic, strong) UISlider *sizeSlider;
 @property(nonatomic, strong) UILabel *sizeValueLabel;
 @property(nonatomic, strong) UISlider *durationSlider;
@@ -85,6 +86,7 @@
     self.preferences = [[NSUserDefaults alloc] initWithSuiteName:kKayokoPreferencesIdentifier];
     [self.preferences registerDefaults:@{
         kKayokoPreferenceKeyFloatingPreview : @(kKayokoPreferenceKeyFloatingPreviewDefaultValue),
+        kKayokoPreferenceKeyFloatingPreviewDoubleTapAction : @(kKayokoPreferenceKeyFloatingPreviewDoubleTapActionDefaultValue),
         kKayokoPreferenceKeyFloatingPreviewSize : @(kKayokoPreferenceKeyFloatingPreviewSizeDefaultValue),
         kKayokoPreferenceKeyFloatingPreviewDuration : @(kKayokoPreferenceKeyFloatingPreviewDurationDefaultValue),
         kKayokoPreferenceKeyFloatingPreviewColor : kKayokoPreferenceKeyFloatingPreviewColorDefaultValue,
@@ -93,6 +95,12 @@
     _enabledSwitch = [[UISwitch alloc] init];
     [_enabledSwitch setOn:[self.preferences boolForKey:kKayokoPreferenceKeyFloatingPreview]];
     [_enabledSwitch addTarget:self action:@selector(enabledSwitchChanged:) forControlEvents:UIControlEventValueChanged];
+
+    _doubleTapActionSwitch = [[UISwitch alloc] init];
+    [_doubleTapActionSwitch setOn:[self.preferences boolForKey:kKayokoPreferenceKeyFloatingPreviewDoubleTapAction]];
+    [_doubleTapActionSwitch addTarget:self
+                               action:@selector(doubleTapActionSwitchChanged:)
+                     forControlEvents:UIControlEventValueChanged];
 
     _sizeSlider = [[UISlider alloc] init];
     [_sizeSlider setMinimumValue:kKayokoPreferenceKeyFloatingPreviewSizeMinimumValue];
@@ -185,6 +193,11 @@
     [self postPreferencesReload];
 }
 
+- (void)doubleTapActionSwitchChanged:(UISwitch *)sender {
+    [self.preferences setBool:[sender isOn] forKey:kKayokoPreferenceKeyFloatingPreviewDoubleTapAction];
+    [self postPreferencesReload];
+}
+
 - (void)sizeSliderChanged:(UISlider *)sender {
     CGFloat size = MIN(MAX([sender value], kKayokoPreferenceKeyFloatingPreviewSizeMinimumValue),
                        kKayokoPreferenceKeyFloatingPreviewSizeMaximumValue);
@@ -219,7 +232,7 @@
 
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
     (void)tableView;
-    return 1;
+    return section == 0 ? 2 : 1;
 }
 
 - (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section {
@@ -247,7 +260,8 @@
 }
 
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
-    NSString *reuseIdentifier = [NSString stringWithFormat:@"KayokoFloatingPreviewCell-%ld", (long)[indexPath section]];
+    NSString *reuseIdentifier = [NSString stringWithFormat:@"KayokoFloatingPreviewCell-%ld-%ld",
+                                                           (long)[indexPath section], (long)[indexPath row]];
     UITableViewCell *cell = [tableView dequeueReusableCellWithIdentifier:reuseIdentifier];
     if (!cell) {
         UITableViewCellStyle style = [indexPath section] == 1 ? UITableViewCellStyleDefault : UITableViewCellStyleValue1;
@@ -255,10 +269,14 @@
         [cell setSelectionStyle:UITableViewCellSelectionStyleNone];
     }
     [[cell textLabel] setTextColor:[UIColor labelColor]];
+    [[cell textLabel] setHidden:NO];
     [cell setAccessoryView:nil];
-    if ([indexPath section] == 0) {
+    if ([indexPath section] == 0 && [indexPath row] == 0) {
         [[cell textLabel] setText:[self localizedStringForKey:@"Enable Floating Preview"]];
         [cell setAccessoryView:[self enabledSwitch]];
+    } else if ([indexPath section] == 0) {
+        [[cell textLabel] setText:[self localizedStringForKey:@"Double-Tap Action"]];
+        [cell setAccessoryView:[self doubleTapActionSwitch]];
     } else if ([indexPath section] == 1) {
         [[cell textLabel] setText:[self localizedStringForKey:@"Size"]];
         if ([[self sizeSlider] superview] != [cell contentView]) {
