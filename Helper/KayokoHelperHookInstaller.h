@@ -35,4 +35,8 @@ NS_ASSUME_NONNULL_BEGIN
 + (void)installKeyboardExtensionSwipeUpHooksForSpotlightOnly:(BOOL)spotlightOnly;
 @end
 
+@interface KayokoHelperHookInstaller (URLOpen)
++ (void)installURLOpenHooks;
+@end
+
 NS_ASSUME_NONNULL_END

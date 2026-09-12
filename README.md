@@ -47,3 +47,22 @@ GPLv3. See [`COPYING`](COPYING).
 文本操作界面，支持分词预览，支持"选序"，长按单词可以再进行二次分词
 
 ![5.jpeg](docs/5.png)
+
+### URL Scheme
+其他 App 可以通过 URL Scheme 唤起 KayokoX 面板：
+
+| URL | 作用 |
+| --- | --- |
+| `kayokox://open` | 弹出面板（任意 host 或不带 host 均可，如 `kayokox://`） |
+| `kayokox://close` / `kayokox://hide` | 收起面板 |
+| `kayokox://toggle` | 面板可见时收起，隐藏时弹出 |
+
+调用示例：
+
+```objc
+[[UIApplication sharedApplication] openURL:[NSURL URLWithString:@"kayokox://open"]
+                                    options:@{}
+                          completionHandler:nil];
+```
+
+在输入框获得焦点时调用 `kayokox://open`，弹出面板选中条目后可自动粘贴回原输入框（与手势唤起行为一致）。

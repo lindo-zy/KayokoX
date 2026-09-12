@@ -266,7 +266,10 @@ NS_ASSUME_NONNULL_BEGIN
 
 - (void)postCoreShow;
 - (void)postCoreHide;
+- (void)postCoreToggle;
 - (void)showKayoko;
+- (void)hideKayoko;
+- (void)toggleKayoko;
 - (void)showKayokoAfterCapturingCurrentFocus;
 - (void)showKayokoFromResponder:(UIResponder *)responder;
 
@@ -689,6 +692,19 @@ CHOptimizedMethod0(self, BOOL, UITextField, resignFirstResponder) {
 - (void)postCoreHide {
     CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(),
                                          (__bridge CFStringRef)kKayokoNotificationKeyCoreHide, nil, nil, YES);
+}
+
+- (void)postCoreToggle {
+    CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(),
+                                         (__bridge CFStringRef)kKayokoNotificationKeyCoreToggle, nil, nil, YES);
+}
+
+- (void)hideKayoko {
+    [self postCoreHide];
+}
+
+- (void)toggleKayoko {
+    [self postCoreToggle];
 }
 
 #pragma mark - Application And Window State

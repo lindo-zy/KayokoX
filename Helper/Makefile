@@ -14,6 +14,7 @@ KayokoHelper_FILES += KayokoInputSwitcherHooks.mm
 KayokoHelper_FILES += KayokoDictationHooks.m
 KayokoHelper_FILES += KayokoSwipeUpGestureRecognizer.m
 KayokoHelper_FILES += KayokoSwipeUpHooks.m
+KayokoHelper_FILES += KayokoURLOpenHooks.m
 
 KayokoHelper_CFLAGS += -fobjc-arc
 KayokoHelper_CFLAGS += -I../Preferences

@@ -1753,7 +1753,11 @@ NS_ASSUME_NONNULL_END
 }
 
 - (void)hideWithAnimationStyle:(KayokoPanelHideAnimationStyle)animationStyle {
-    [self hideFloatingPreviewAnimated:NO];
+    // Panel-level hides are driven by transient system UI hooks (home screen
+    // appearance, spotlight dismissal, text-effects window rotation, ...). Those
+    // events cluster right after SpringBoard launch and must not dismiss the
+    // floating preview; the panel and the preview are never visible together, so
+    // a hide only matters when the panel itself is on screen.
     if (self.mainViewController && ![self.mainViewController isHidden]) {
         [self.mainViewController hideWithAnimationStyle:animationStyle completion:nil];
     }

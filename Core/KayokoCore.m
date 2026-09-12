@@ -101,6 +101,21 @@ static void kayokoCoreHideCallback(CFNotificationCenterRef center, void *observe
     [[KayokoCoreRuntime sharedRuntime] hideForExternalRequest];
 }
 
+static void kayokoCoreToggleCallback(CFNotificationCenterRef center, void *observer, CFStringRef name,
+                                     const void *object, CFDictionaryRef userInfo) {
+    (void)center;
+    (void)observer;
+    (void)name;
+    (void)object;
+    (void)userInfo;
+    KayokoCoreRuntime *runtime = [KayokoCoreRuntime sharedRuntime];
+    if (runtime.panelVisible) {
+        [runtime hideForExternalRequest];
+    } else {
+        [runtime show];
+    }
+}
+
 static void kayokoCoreReloadCallback(CFNotificationCenterRef center, void *observer, CFStringRef name,
                                      const void *object, CFDictionaryRef userInfo) {
     (void)center;
@@ -270,6 +285,8 @@ static void kayokoCorePasteTipPreferencesReloadCallback(CFNotificationCenterRef 
                           callback:kayokoCoreHideCallback];
     [self addDarwinObserverForName:(__bridge CFStringRef)kKayokoLegacyNotificationKeyCoreHide
                           callback:kayokoCoreHideCallback];
+    [self addDarwinObserverForName:(__bridge CFStringRef)kKayokoNotificationKeyCoreToggle
+                          callback:kayokoCoreToggleCallback];
     [self addDarwinObserverForName:(__bridge CFStringRef)kKayokoNotificationKeyCoreReload
                           callback:kayokoCoreReloadCallback];
     [self addDarwinObserverForName:(__bridge CFStringRef)kKayokoNotificationKeyPreferencesReload

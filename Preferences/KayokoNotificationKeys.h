@@ -11,6 +11,7 @@ static NSString *const kKayokoNotificationKeyCoreShow = @"com.lindo.kayoko.core.
 static NSString *const kKayokoLegacyNotificationKeyCoreShow = @"dev.traurige.kayoko.core.show";
 static NSString *const kKayokoNotificationKeyCoreHide = @"com.lindo.kayoko.core.hide";
 static NSString *const kKayokoLegacyNotificationKeyCoreHide = @"dev.traurige.kayoko.core.hide";
+static NSString *const kKayokoNotificationKeyCoreToggle = @"com.lindo.kayoko.core.toggle";
 static NSString *const kKayokoNotificationKeyCoreReload = @"com.lindo.kayoko.core.reload";
 static NSString *const kKayokoNotificationKeyCoreCheckpointHistory = @"com.lindo.kayoko.core.checkpoint-history";
 static NSString *const kKayokoNotificationKeyCorePrepareMaintenance = @"com.lindo.kayoko.core.prepare-maintenance";
