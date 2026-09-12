@@ -1601,7 +1601,7 @@
 					"-framework",
 					CoreServices,
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.mlgm.kayoko.core;
+				PRODUCT_BUNDLE_IDENTIFIER = com.lindo.kayoko.core;
 				PRODUCT_NAME = KayokoCore;
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
@@ -1644,7 +1644,7 @@
 					"-framework",
 					SpringBoardServices,
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.mlgm.kayoko.preferences;
+				PRODUCT_BUNDLE_IDENTIFIER = com.lindo.kayoko.preferences;
 				PRODUCT_NAME = KayokoPreferences;
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
@@ -1680,7 +1680,7 @@
 					"$(inherited)",
 					"-lsubstrate",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.mlgm.kayoko.helper;
+				PRODUCT_BUNDLE_IDENTIFIER = com.lindo.kayoko.helper;
 				PRODUCT_NAME = KayokoHelper;
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
@@ -1723,7 +1723,7 @@
 					"-framework",
 					SpringBoardServices,
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.mlgm.kayoko.preferences;
+				PRODUCT_BUNDLE_IDENTIFIER = com.lindo.kayoko.preferences;
 				PRODUCT_NAME = KayokoPreferences;
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
@@ -1759,7 +1759,7 @@
 					"$(inherited)",
 					"-lsubstrate",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.mlgm.kayoko.helper;
+				PRODUCT_BUNDLE_IDENTIFIER = com.lindo.kayoko.helper;
 				PRODUCT_NAME = KayokoHelper;
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
@@ -1807,7 +1807,7 @@
 					"-framework",
 					CoreServices,
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.mlgm.kayoko.core;
+				PRODUCT_BUNDLE_IDENTIFIER = com.lindo.kayoko.core;
 				PRODUCT_NAME = KayokoCore;
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
@@ -1939,7 +1939,7 @@
 					"$(inherited)",
 					"-lsqlite3",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.mlgm.kayoko.updater;
+				PRODUCT_BUNDLE_IDENTIFIER = com.lindo.kayoko.updater;
 				PRODUCT_NAME = kayoko_updater;
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
@@ -1974,7 +1974,7 @@
 					"$(inherited)",
 					"-lsqlite3",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.mlgm.kayoko.updater;
+				PRODUCT_BUNDLE_IDENTIFIER = com.lindo.kayoko.updater;
 				PRODUCT_NAME = kayoko_updater;
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;

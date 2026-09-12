@@ -14,7 +14,7 @@
 #import <sqlite3.h>
 #import <string.h>
 
-static NSString *const kKayokoHistoryStoreErrorDomain = @"com.mlgm.kayoko.history-store";
+static NSString *const kKayokoHistoryStoreErrorDomain = @"com.lindo.kayoko.history-store";
 static NSString *const kKayokoHistoryStoreMigrationKey = @"v4_legacy_sources_imported";
 static NSString *const kKayokoHistoryStoreSearchIndexSchemaVersionKey = @"search_index_schema_version";
 static NSString *const kKayokoHistoryStoreImageDimensionsBackfillKey = @"image_dimensions_backfilled";
@@ -78,7 +78,7 @@ NS_ASSUME_NONNULL_END
 #pragma mark - Paths
 
 + (NSString *)defaultDatabasePath {
-    return jbroot(@"/var/mobile/Library/com.mlgm.kayoko/history-v4.sqlite");
+    return jbroot(@"/var/mobile/Library/com.lindo.kayoko/history-v4.sqlite");
 }
 
 #pragma mark - Lifecycle

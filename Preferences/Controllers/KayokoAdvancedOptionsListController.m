@@ -14,7 +14,7 @@
 #import <UIKit/UIKit.h>
 #import <roothide.h>
 
-static NSString *const kKayokoDataDirectoryPath = @"/var/mobile/Library/com.mlgm.kayoko";
+static NSString *const kKayokoDataDirectoryPath = @"/var/mobile/Library/com.lindo.kayoko";
 static NSString *const kKayokoCopyLogDataDirectoryPath = @"/var/mobile/Library/CopyLog";
 static NSString *const kKayokoCopyVaultDataDirectoryPath = @"/var/mobile/Documents/CopyVault";
 

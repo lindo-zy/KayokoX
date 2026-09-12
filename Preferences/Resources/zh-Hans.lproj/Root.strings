@@ -43,11 +43,13 @@
 "Kayoko entered maintenance mode before the import failed. Restart SpringBoard now to continue using Kayoko." = "导入失败前 Kayoko 已进入维护模式。你需要立即重启 SpringBoard，才能继续使用 Kayoko。";
 "Made by OwnGoal Studio" = "「乌龙工作室」倾情献制";
 "Maximum Amount" = "最大数量";
+"mlgm" = "mlgm";
 "More" = "更多";
 "Network Request Failed" = "网络请求失败";
 "Not Now" = "稍后";
 "Off" = "关闭";
 "One-Finger Swipe Up" = "单指上划";
+"Open mlgm's GitHub profile." = "关注mglm66";
 "OwnGoal Studio Kayoko" = "乌龙工作室版Kayoko";
 "Play Haptic Feedback" = "播放触觉反馈";
 "Play Sound Effects" = "播放声音效果";
@@ -76,14 +78,14 @@
 "Save Images" = "保存图像";
 "Save Text" = "保存文本";
 "Server returned an invalid response. Tap the screen to retry: %@" = "服务器返回了无效的响应，轻点屏幕以重试：%@";
-"Sharing some tweaks and apps I use myself." = "个人源 · 收录我常用的工具";
+"Sharing some tweaks and apps I use myself." = "欢迎关注";
 "Show KayokoX" = "显示 KayokoX";
 "Single Line" = "单行";
 "Swipe to Select Words" = "滑动选词";
 "The data was imported successfully. Restart SpringBoard now to finish the import and continue using Kayoko." = "数据已成功导入。你需要立即重启 SpringBoard，才能完成导入并继续使用 Kayoko。";
 "The network request failed." = "网络请求失败。";
 "The “Prediction Bar” method displays custom suggestions on the “More Keyboard Keyplane” (123)." = "“预测栏” 方法在 “更多键盘 (123)” 上显示自定义建议。";
-"This build was modified by mlgm based on the OwnGoal Studio edition." = "当前版本由 mlgm 基于 Kayoko (乌龙版本) 进行修改";
+"This build was modified by lindo based on the OwnGoal Studio edition." = "当前版本由 lindo 基于 Kayoko (乌龙版本) + mlgm版本 进行修改";
 "This option requires restarting SpringBoard to apply. Do you want to restart now?" = "此选项需要重新启动 SpringBoard 才能生效。你现在要重新启动吗？";
 "Tools" = "工具";
 "Touch Outside to Dismiss" = "触摸外部收起";
@@ -99,5 +101,5 @@
 "View Priority" = "视图优先级";
 "When enabled, long-press a text item in History or Favorites to enter word selection mode. Tap a word to select it, then drag across words to extend or reduce the selection." = "开启后，长按历史记录或收藏中的文本条目即可进入滑动选词模式。轻点词语可选中，然后在词语间滑动来扩展或缩小选区。";
 "Wishing on a star…" = "在星星上许个愿…";
-"mlgm Personal Repo" = "mlgm个人源";
+"lindo Personal Repo" = "lindo的github";
 "⌘⇧V External Keyboard" = "⌘⇧V 外接键盘";

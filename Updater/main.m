@@ -8,7 +8,7 @@
 #import <Foundation/Foundation.h>
 
 static NSString *externalImportErrorDescription(NSError *error, NSString *fallback) {
-    if ([[error domain] isEqualToString:@"com.mlgm.kayoko.history-store"] &&
+    if ([[error domain] isEqualToString:@"com.lindo.kayoko.history-store"] &&
         [[error localizedFailureReason] length] > 0) {
         return [error localizedFailureReason];
     }

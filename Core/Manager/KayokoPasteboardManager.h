@@ -19,7 +19,7 @@ typedef void (^KayokoPasteboardAppBundleIdentifiersCompletion)(NSArray<NSString 
 
 static NSString *const kKayokoHistoryKeyHistory = @"history";
 static NSString *const kKayokoHistoryKeyFavorites = @"favorites";
-static NSString *const kKayokoPasteboardManagerHistoryDidChangeNotification = @"com.mlgm.kayoko.history.did-change";
+static NSString *const kKayokoPasteboardManagerHistoryDidChangeNotification = @"com.lindo.kayoko.history.did-change";
 static NSString *const kKayokoPasteboardManagerHistoryChangeTypeKey = @"change_type";
 static NSString *const kKayokoPasteboardManagerHistoryChangeHistoryKeyKey = @"history_key";
 static NSString *const kKayokoPasteboardManagerHistoryChangeItemKey = @"item";

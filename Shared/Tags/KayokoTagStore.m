@@ -8,9 +8,9 @@
 
 #import <roothide.h>
 
-NSString *const kKayokoTagStoreErrorDomain = @"com.mlgm.kayoko.tag-store";
+NSString *const kKayokoTagStoreErrorDomain = @"com.lindo.kayoko.tag-store";
 
-static NSString *const kKayokoTagStoreDataDirectoryPath = @"/var/mobile/Library/com.mlgm.kayoko";
+static NSString *const kKayokoTagStoreDataDirectoryPath = @"/var/mobile/Library/com.lindo.kayoko";
 static NSString *const kKayokoTagStoreFileName = @"tags-v4.plist";
 
 @interface KayokoTagStore ()

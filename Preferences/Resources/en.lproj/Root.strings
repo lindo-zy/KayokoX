@@ -43,11 +43,13 @@
 "Kayoko entered maintenance mode before the import failed. Restart SpringBoard now to continue using Kayoko." = "Kayoko entered maintenance mode before the import failed. Restart SpringBoard now to continue using Kayoko.";
 "Made by OwnGoal Studio" = "Made by OwnGoal Studio";
 "Maximum Amount" = "Maximum Amount";
+"mlgm" = "mlgm";
 "More" = "More";
 "Network Request Failed" = "Network Request Failed";
 "Not Now" = "Not Now";
 "Off" = "Off";
 "One-Finger Swipe Up" = "One-Finger Swipe Up";
+"Open mlgm's GitHub profile." = "mglm66 github";
 "OwnGoal Studio Kayoko" = "OwnGoal Studio Kayoko";
 "Play Haptic Feedback" = "Play Haptic Feedback";
 "Play Sound Effects" = "Play Sound Effects";
@@ -83,7 +85,7 @@
 "The data was imported successfully. Restart SpringBoard now to finish the import and continue using Kayoko." = "The data was imported successfully. Restart SpringBoard now to finish the import and continue using Kayoko.";
 "The network request failed." = "The network request failed.";
 "The “Prediction Bar” method displays custom suggestions on the “More Keyboard Keyplane” (123)." = "The “Prediction Bar” method displays custom suggestions on the “More Keyboard Keyplane” (123).";
-"This build was modified by mlgm based on the OwnGoal Studio edition." = "This build was modified by mlgm based on the OwnGoal Studio edition.";
+"This build was modified by lindo based on the OwnGoal Studio edition." = "This build was modified by lindo based on the OwnGoal Studio edition.";
 "This option requires restarting SpringBoard to apply. Do you want to restart now?" = "This option requires restarting SpringBoard to apply. Do you want to restart now?";
 "Tools" = "Tools";
 "Touch Outside to Dismiss" = "Touch Outside to Dismiss";
@@ -99,5 +101,5 @@
 "View Priority" = "View Priority";
 "When enabled, long-press a text item in History or Favorites to enter word selection mode. Tap a word to select it, then drag across words to extend or reduce the selection." = "When enabled, long-press a text item in History or Favorites to enter word selection mode. Tap a word to select it, then drag across words to extend or reduce the selection.";
 "Wishing on a star…" = "Wishing on a star…";
-"mlgm Personal Repo" = "mlgm Personal Repo";
+"lindo Personal Repo" = "lindo Personal Repo";
 "⌘⇧V External Keyboard" = "⌘⇧V External Keyboard";

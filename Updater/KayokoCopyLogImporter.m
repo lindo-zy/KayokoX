@@ -14,7 +14,7 @@
 #import <math.h>
 #import <sys/stat.h>
 
-static NSString *const kKayokoCopyLogImporterErrorDomain = @"com.mlgm.kayoko.copylog-importer";
+static NSString *const kKayokoCopyLogImporterErrorDomain = @"com.lindo.kayoko.copylog-importer";
 static NSString *const kKayokoCopyLogSnippetsSection = @"Snippets";
 static NSString *const kKayokoCopyLogFavoritesSection = @"Favorites";
 static NSString *const kKayokoCopyLogHistoryKey = @"history";

@@ -13,7 +13,7 @@
 #import <UIKit/UIKit.h>
 #import <substrate.h>
 
-static NSString *const kKayokoInputSwitcherItemIdentifier = @"com.mlgm.kayoko.globe";
+static NSString *const kKayokoInputSwitcherItemIdentifier = @"com.lindo.kayoko.globe";
 
 CHDeclareClass(UIInputSwitcherView);
 

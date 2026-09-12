@@ -15,11 +15,11 @@
 #import <roothide.h>
 #import <unistd.h>
 
-static NSString *const kKayokoCurrentDataDirectory = @"/var/mobile/Library/com.mlgm.kayoko";
+static NSString *const kKayokoCurrentDataDirectory = @"/var/mobile/Library/com.lindo.kayoko";
 static NSString *const kKayokoCopyVaultDataDirectory = @"/var/mobile/Documents/CopyVault";
 static NSString *const kKayokoCopyLogDataDirectory = @"/var/mobile/Library/CopyLog";
 static NSString *const kKayokoPreferencesBundlePath = @"/Library/PreferenceBundles/KayokoPreferences.bundle";
-static NSString *const kKayokoThumbnailCacheDirectoryPath = @"/var/mobile/Library/Caches/com.mlgm.kayoko/thumbnails";
+static NSString *const kKayokoThumbnailCacheDirectoryPath = @"/var/mobile/Library/Caches/com.lindo.kayoko/thumbnails";
 static NSUInteger const kKayokoMobileUserID = 501;
 static NSUInteger const kKayokoMobileGroupID = 501;
 static useconds_t const kKayokoCoreMaintenanceGracePeriodMicroseconds = 500000;

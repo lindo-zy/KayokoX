@@ -56,7 +56,7 @@ typedef NS_ENUM(NSUInteger, KayokoOverlayWindowLevelMode) {
     kKayokoOverlayWindowLevelModeMaximum = 1
 };
 
-static NSString *const kKayokoPreferencesIdentifier = @"com.mlgm.kayoko.preferences";
+static NSString *const kKayokoPreferencesIdentifier = @"com.lindo.kayoko.preferences";
 
 static NSString *const kKayokoPreferenceKeyEnabled = @"Enabled";
 static NSString *const kKayokoPreferenceKeyMaximumHistoryAmount = @"MaximumHistoryAmount";
@@ -106,13 +106,13 @@ static ActivationMethod const kKayokoPreferenceKeyActivationMethodDefaultValue =
 static BOOL const kKayokoPreferenceKeyPrivacyModeDefaultValue = NO;
 static BOOL const kKayokoPreferenceKeyFloatingPreviewDefaultValue = NO;
 static BOOL const kKayokoPreferenceKeyFloatingPreviewDoubleTapActionDefaultValue = NO;
-static CGFloat const kKayokoPreferenceKeyFloatingPreviewSizeDefaultValue = 64.0;
-static CGFloat const kKayokoPreferenceKeyFloatingPreviewSizeMinimumValue = 44.0;
-static CGFloat const kKayokoPreferenceKeyFloatingPreviewSizeMaximumValue = 108.0;
+static CGFloat const kKayokoPreferenceKeyFloatingPreviewSizeDefaultValue = 40.0;
+static CGFloat const kKayokoPreferenceKeyFloatingPreviewSizeMinimumValue = 25.0;
+static CGFloat const kKayokoPreferenceKeyFloatingPreviewSizeMaximumValue = 100.0;
 static CGFloat const kKayokoPreferenceKeyFloatingPreviewDurationDefaultValue = 5.0;
 static CGFloat const kKayokoPreferenceKeyFloatingPreviewDurationMinimumValue = 3.0;
 static CGFloat const kKayokoPreferenceKeyFloatingPreviewDurationMaximumValue = 10.0;
-static NSString *const kKayokoPreferenceKeyFloatingPreviewColorDefaultValue = @"#666666FF";
+static NSString *const kKayokoPreferenceKeyFloatingPreviewColorDefaultValue = @"#7FA6F8FF";
 static BOOL const kKayokoPreferenceKeyFloatingPreviewDockedRightDefaultValue = YES;
 static CGFloat const kKayokoPreferenceKeyFloatingPreviewVerticalPositionDefaultValue = 0.5;
 static NSString *const kKayokoPreferenceKeyImageDoubleTapActionURLDefaultValue = @"";

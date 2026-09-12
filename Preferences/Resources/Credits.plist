@@ -49,6 +49,20 @@
 			<integer>54</integer>
 		</dict>
 		<dict>
+			<key>cellClass</key>
+			<string>KayokoLinkCell</string>
+			<key>label</key>
+			<string>mlgm</string>
+			<key>subtitle</key>
+			<string>Open mlgm's GitHub profile.</string>
+			<key>url</key>
+			<string>https://github.com/mlgm66</string>
+			<key>localizationTable</key>
+			<string>Credits</string>
+			<key>height</key>
+			<integer>54</integer>
+		</dict>
+		<dict>
 			<key>cell</key>
 			<string>PSGroupCell</string>
 			<key>label</key>
@@ -64,7 +78,7 @@
 			<key>subtitle</key>
 			<string>Open the source repository for the current version.</string>
 			<key>url</key>
-			<string>https://github.com/mlgm66/Kayoko</string>
+			<string>https://github.com/lindo/KayokoX</string>
 			<key>localizationTable</key>
 			<string>Credits</string>
 			<key>height</key>

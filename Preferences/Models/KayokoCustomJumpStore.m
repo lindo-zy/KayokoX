@@ -8,9 +8,9 @@
 
 #import <roothide.h>
 
-NSString *const kKayokoCustomJumpStoreErrorDomain = @"com.mlgm.kayoko.custom-jump-store";
+NSString *const kKayokoCustomJumpStoreErrorDomain = @"com.lindo.kayoko.custom-jump-store";
 
-static NSString *const kKayokoCustomJumpStoreDataDirectoryPath = @"/var/mobile/Library/com.mlgm.kayoko";
+static NSString *const kKayokoCustomJumpStoreDataDirectoryPath = @"/var/mobile/Library/com.lindo.kayoko";
 static NSString *const kKayokoCustomJumpStoreFileName = @"custom-jumps-v1.plist";
 static NSString *const kKayokoImageActionStoreFileName = @"image-actions-v1.plist";
 
