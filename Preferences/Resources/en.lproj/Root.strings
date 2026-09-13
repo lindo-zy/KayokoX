@@ -63,6 +63,9 @@
 "Previous" = "Previous";
 "Privacy Mode" = "Privacy Mode";
 "Floating Preview" = "Floating Preview";
+"Floating Panel" = "Floating Panel";
+"Panel Size" = "Panel Size";
+"Changing the size scales the icons, text, spacing, and height while keeping the panel width fixed." = "Changing the size scales the icons, text, spacing, and height while keeping the panel width fixed.";
 "Enable Floating Preview" = "Enable Floating Preview";
 "Double-Tap Action" = "Double-Tap Action";
 "Size" = "Size";

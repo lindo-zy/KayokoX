@@ -14,6 +14,7 @@
 #import "KayokoPreferenceKeys.h"
 #import "KayokoPreviewView.h"
 #import "KayokoQuickAction.h"
+#import "KayokoQuickActionPanelViewController.h"
 
 static NSString *kayokoPreviewTextByTrimmingBoundaryNewlines(NSString *text) {
     return [(text ?: @"") stringByTrimmingCharactersInSet:[NSCharacterSet newlineCharacterSet]];
@@ -267,30 +268,19 @@ NS_ASSUME_NONNULL_END
         return;
     }
 
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:nil
-                                                                     message:nil
-                                                              preferredStyle:UIAlertControllerStyleActionSheet];
-    for (NSDictionary<NSString *, id> *action in actions) {
-        NSDictionary<NSString *, id> *actionToOpen = [action copy];
-        [alert addAction:[UIAlertAction actionWithTitle:actionToOpen[@"title"]
-                                                   style:UIAlertActionStyleDefault
-                                                 handler:^(__unused UIAlertAction *selectedAction) {
-                                                   [self openImageAction:actionToOpen];
-                                                 }]];
+    if ([self presentedViewController] || [self isBeingDismissed]) {
+        return;
     }
 
-    NSBundle *bundle = [KayokoPasteboardManager localizationBundle];
-    NSString *cancelTitle = [bundle localizedStringForKey:@"Cancel" value:@"取消" table:@"Tweak"];
-    [alert addAction:[UIAlertAction actionWithTitle:cancelTitle style:UIAlertActionStyleCancel handler:nil]];
-
-    UIPopoverPresentationController *popover = [alert popoverPresentationController];
-    if (popover) {
-        UIView *sourceView = [[[self previewView] headerView] alternateTrailingButton];
-        [popover setSourceView:sourceView];
-        [popover setSourceRect:[sourceView bounds]];
-        [popover setPermittedArrowDirections:UIPopoverArrowDirectionAny];
-    }
-    [self presentViewController:alert animated:YES completion:nil];
+    __weak typeof(self) weakSelf = self;
+    KayokoQuickActionPanelViewController *panel = [[KayokoQuickActionPanelViewController alloc]
+        initWithActions:actions
+        anchoringAboveView:[[self parentViewController] view]
+        placement:KayokoQuickActionPanelPlacementAboveAnchor
+        selectionHandler:^(NSDictionary<NSString *, id> *action) {
+          [weakSelf openImageAction:action];
+        }];
+    [self presentViewController:panel animated:YES completion:nil];
 }
 
 - (void)handleImageDoubleTapGesture:(UITapGestureRecognizer *)gestureRecognizer {

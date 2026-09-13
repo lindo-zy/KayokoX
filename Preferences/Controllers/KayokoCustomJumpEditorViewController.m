@@ -14,6 +14,7 @@
 @property(nonatomic, strong) UITableView *tableView;
 @property(nonatomic, strong) UITextField *titleTextField;
 @property(nonatomic, strong) UITextField *linkTextField;
+@property(nonatomic, strong) UITextField *iconTextField;
 @property(nonatomic, strong) KayokoKeyboardAvoidanceCoordinator *keyboardAvoidanceCoordinator;
 @property(nonatomic, assign) BOOL didFocusTitleTextFieldInitially;
 @end
@@ -83,12 +84,21 @@
 
     _linkTextField = [[UITextField alloc] init];
     [_linkTextField setText:[[self jump] link]];
-    [_linkTextField setReturnKeyType:UIReturnKeyDone];
+    [_linkTextField setReturnKeyType:UIReturnKeyNext];
     [_linkTextField setDelegate:self];
     [_linkTextField setTextAlignment:NSTextAlignmentRight];
     [_linkTextField setKeyboardType:UIKeyboardTypeURL];
     [_linkTextField setAutocapitalizationType:UITextAutocapitalizationTypeNone];
     [_linkTextField setAutocorrectionType:UITextAutocorrectionTypeNo];
+
+    _iconTextField = [[UITextField alloc] init];
+    [_iconTextField setText:[[self jump] icon]];
+    [_iconTextField setReturnKeyType:UIReturnKeyDone];
+    [_iconTextField setDelegate:self];
+    [_iconTextField setTextAlignment:NSTextAlignmentRight];
+    [_iconTextField setKeyboardType:UIKeyboardTypeASCIICapable];
+    [_iconTextField setAutocapitalizationType:UITextAutocapitalizationTypeNone];
+    [_iconTextField setAutocorrectionType:UITextAutocorrectionTypeNo];
 
     _tableView = [[UITableView alloc] initWithFrame:CGRectZero style:UITableViewStyleInsetGrouped];
     [_tableView setTranslatesAutoresizingMaskIntoConstraints:NO];
@@ -109,6 +119,8 @@
 - (BOOL)textFieldShouldReturn:(UITextField *)textField {
     if (textField == [self titleTextField]) {
         [[self linkTextField] becomeFirstResponder];
+    } else if (textField == [self linkTextField]) {
+        [[self iconTextField] becomeFirstResponder];
     } else {
         [textField resignFirstResponder];
     }
@@ -118,7 +130,7 @@
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
     (void)tableView;
     (void)section;
-    return 2;
+    return 3;
 }
 
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
@@ -135,10 +147,14 @@
         [[cell textLabel] setText:[self localizedStringForKey:@"Title"]];
         [[self titleTextField] setFrame:CGRectMake(0.0, 0.0, 220.0, 36.0)];
         [cell setAccessoryView:[self titleTextField]];
-    } else {
+    } else if ([indexPath row] == 1) {
         [[cell textLabel] setText:[self localizedStringForKey:@"Jump Link"]];
         [[self linkTextField] setFrame:CGRectMake(0.0, 0.0, 220.0, 36.0)];
         [cell setAccessoryView:[self linkTextField]];
+    } else {
+        [[cell textLabel] setText:[self localizedStringForKey:@"Icon"]];
+        [[self iconTextField] setFrame:CGRectMake(0.0, 0.0, 220.0, 36.0)];
+        [cell setAccessoryView:[self iconTextField]];
     }
     return cell;
 }
@@ -147,8 +163,10 @@
     (void)tableView;
     if ([indexPath row] == 0) {
         [[self titleTextField] becomeFirstResponder];
-    } else {
+    } else if ([indexPath row] == 1) {
         [[self linkTextField] becomeFirstResponder];
+    } else {
+        [[self iconTextField] becomeFirstResponder];
     }
 }
 
@@ -161,11 +179,14 @@
         stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
     NSString *link = [[[self linkTextField] text]
         stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    NSString *icon = [[[self iconTextField] text]
+        stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
     if ([title length] == 0) {
         title = [self localizedStringForKey:@"Untitled"];
     }
 
-    KayokoCustomJump *updatedJump = [[KayokoCustomJump alloc] initWithUUID:[[self jump] uuid] title:title link:link];
+    KayokoCustomJump *updatedJump =
+        [[KayokoCustomJump alloc] initWithUUID:[[self jump] uuid] title:title link:link icon:icon];
     void (^completionHandler)(KayokoCustomJump *) = [self completionHandler];
     [self dismissViewControllerAnimated:YES
                              completion:^{

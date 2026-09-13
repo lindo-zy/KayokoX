@@ -10,6 +10,8 @@
 static NSString *const kKayokoTextActionStorePath = @"/var/mobile/Library/com.lindo.kayoko/custom-jumps-v1.plist";
 static NSString *const kKayokoImageActionStorePath = @"/var/mobile/Library/com.lindo.kayoko/image-actions-v1.plist";
 
+static NSString *const kKayokoQuickActionDefaultIconName = @"link";
+
 @implementation KayokoQuickAction
 
 + (NSArray<NSDictionary<NSString *, id> *> *)actionsForKind:(KayokoQuickActionKind)kind {
@@ -35,11 +37,15 @@ static NSString *const kKayokoImageActionStorePath = @"/var/mobile/Library/com.l
         }
         NSString *title = item[@"title"];
         NSString *link = item[@"link"];
+        NSString *icon = item[@"icon"];
         if (![title isKindOfClass:[NSString class]] || ![link isKindOfClass:[NSString class]] ||
             [title length] == 0) {
             continue;
         }
-        [actions addObject:@{ @"title" : title, @"link" : link }];
+        if (![icon isKindOfClass:[NSString class]] || [icon length] == 0) {
+            icon = kKayokoQuickActionDefaultIconName;
+        }
+        [actions addObject:@{ @"title" : title, @"link" : link, @"icon" : icon }];
     }
     return [actions copy];
 }

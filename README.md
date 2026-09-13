@@ -57,12 +57,4 @@ GPLv3. See [`COPYING`](COPYING).
 | `kayokox://close` / `kayokox://hide` | 收起面板 |
 | `kayokox://toggle` | 面板可见时收起，隐藏时弹出 |
 
-调用示例：
-
-```objc
-[[UIApplication sharedApplication] openURL:[NSURL URLWithString:@"kayokox://open"]
-                                    options:@{}
-                          completionHandler:nil];
-```
-
 在输入框获得焦点时调用 `kayokox://open`，弹出面板选中条目后可自动粘贴回原输入框（与手势唤起行为一致）。

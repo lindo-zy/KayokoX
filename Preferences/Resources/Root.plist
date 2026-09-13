@@ -68,6 +68,16 @@
 			<key>label</key>
 			<string>Floating Preview</string>
 		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSLinkCell</string>
+			<key>detail</key>
+			<string>KayokoFloatingPanelSettingsViewController</string>
+			<key>defaults</key>
+			<string>com.lindo.kayoko.preferences</string>
+			<key>label</key>
+			<string>Floating Panel</string>
+		</dict>
 
 		<dict>
 			<key>cell</key>

@@ -13,6 +13,7 @@
 #import "KayokoPasteboardItem.h"
 #import "KayokoPreferenceKeys.h"
 #import "KayokoQuickAction.h"
+#import "KayokoQuickActionPanelViewController.h"
 
 #import <AVFoundation/AVFoundation.h>
 #import <AudioToolbox/AudioToolbox.h>
@@ -384,7 +385,7 @@ static CGFloat const kKayokoFloatingPreviewVerticalEdgeInset = 12.0;
 
 NS_ASSUME_NONNULL_BEGIN
 
-@interface KayokoCoreRuntime () <KayokoMainViewControllerDelegate, UIGestureRecognizerDelegate>
+@interface KayokoCoreRuntime () <KayokoMainViewControllerDelegate>
 
 #pragma mark - Runtime Configuration
 
@@ -411,7 +412,6 @@ NS_ASSUME_NONNULL_BEGIN
 @property(nonatomic, strong, nullable) KayokoFloatingPreviewViewController *floatingPreviewViewController;
 @property(nonatomic, strong, nullable) KayokoPasteboardItem *floatingPreviewItem;
 @property(nonatomic, copy, nullable) dispatch_block_t floatingPreviewExpirationBlock;
-@property(nonatomic, strong, nullable) UITapGestureRecognizer *floatingPreviewActionOutsideTapRecognizer;
 @property(nonatomic, assign) NSUInteger floatingPreviewDisplayToken;
 @property(nonatomic, assign) KayokoPanelPresentationMode activePresentationMode;
 @property(nonatomic, assign) BOOL pendingHeightPreferenceApply;
@@ -469,8 +469,6 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)presentFloatingPreviewActionsForItem:(KayokoPasteboardItem *)item;
 - (void)openFloatingPreviewAction:(NSDictionary<NSString *, id> *)action
                           forItem:(KayokoPasteboardItem *)item;
-- (void)handleFloatingPreviewActionOutsideTap:(UITapGestureRecognizer *)gestureRecognizer;
-- (void)removeFloatingPreviewActionOutsideTapRecognizer;
 - (void)cancelFloatingPreviewExpiration;
 - (void)applyFloatingPreviewAppearance;
 
@@ -741,7 +739,6 @@ NS_ASSUME_NONNULL_END
 
 - (void)hideFloatingPreviewAnimated:(BOOL)animated {
     [self cancelFloatingPreviewExpiration];
-    [self removeFloatingPreviewActionOutsideTapRecognizer];
     self.floatingPreviewItem = nil;
     NSUInteger displayToken = ++self.floatingPreviewDisplayToken;
 
@@ -895,69 +892,19 @@ NS_ASSUME_NONNULL_END
         return;
     }
 
-    [[viewController button] setHidden:YES];
-    NSBundle *bundle = [KayokoPasteboardManager localizationBundle];
-    NSString *titleKey = isImageItem ? @"Image Actions" : @"Custom Jumps";
-    NSString *title = [bundle localizedStringForKey:titleKey value:titleKey table:@"CustomJumps"];
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:title
-                                                                     message:nil
-                                                              preferredStyle:UIAlertControllerStyleAlert];
     __weak typeof(self) weakSelf = self;
-    for (NSDictionary<NSString *, id> *action in actions) {
-        NSDictionary<NSString *, id> *actionToOpen = [action copy];
-        [alert addAction:[UIAlertAction actionWithTitle:actionToOpen[@"title"]
-                                                   style:UIAlertActionStyleDefault
-                                                 handler:^(__unused UIAlertAction *selectedAction) {
-                                                   [weakSelf openFloatingPreviewAction:actionToOpen forItem:item];
-                                                 }]];
-    }
-
-    NSString *cancelTitle = [bundle localizedStringForKey:@"Cancel" value:@"取消" table:@"CustomJumps"];
-    [alert addAction:[UIAlertAction actionWithTitle:cancelTitle
-                                               style:UIAlertActionStyleCancel
-                                             handler:^(__unused UIAlertAction *selectedAction) {
-                                               [weakSelf hideFloatingPreviewAnimated:NO];
-                                             }]];
-    [viewController presentViewController:alert
-                                 animated:YES
-                               completion:^{
-                                 __strong typeof(weakSelf) strongSelf = weakSelf;
-                                 if (!strongSelf || [viewController presentedViewController] != alert) {
-                                     return;
-                                 }
-                                 UITapGestureRecognizer *outsideTapRecognizer = [[UITapGestureRecognizer alloc]
-                                     initWithTarget:strongSelf
-                                            action:@selector(handleFloatingPreviewActionOutsideTap:)];
-                                 [outsideTapRecognizer setCancelsTouchesInView:NO];
-                                 [outsideTapRecognizer setDelegate:strongSelf];
-                                 [window addGestureRecognizer:outsideTapRecognizer];
-                                 [strongSelf setFloatingPreviewActionOutsideTapRecognizer:outsideTapRecognizer];
-                               }];
-}
-
-- (void)handleFloatingPreviewActionOutsideTap:(UITapGestureRecognizer *)gestureRecognizer {
-    if ([gestureRecognizer state] == UIGestureRecognizerStateEnded) {
-        [self hideFloatingPreviewAnimated:NO];
-    }
-}
-
-- (BOOL)gestureRecognizer:(UIGestureRecognizer *)gestureRecognizer shouldReceiveTouch:(UITouch *)touch {
-    if (gestureRecognizer != [self floatingPreviewActionOutsideTapRecognizer]) {
-        return YES;
-    }
-
-    UIView *presentedView = [[[self floatingPreviewViewController] presentedViewController] view];
-    UIView *touchedView = [touch view];
-    return !presentedView || ![touchedView isDescendantOfView:presentedView];
-}
-
-- (void)removeFloatingPreviewActionOutsideTapRecognizer {
-    UITapGestureRecognizer *recognizer = [self floatingPreviewActionOutsideTapRecognizer];
-    if (!recognizer) {
-        return;
-    }
-    [[recognizer view] removeGestureRecognizer:recognizer];
-    [self setFloatingPreviewActionOutsideTapRecognizer:nil];
+    KayokoQuickActionPanelViewController *panel = [[KayokoQuickActionPanelViewController alloc]
+        initWithActions:actions
+        anchoringAboveView:nil
+        placement:KayokoQuickActionPanelPlacementScreenUpperCenter
+        selectionHandler:^(NSDictionary<NSString *, id> *action) {
+          [weakSelf openFloatingPreviewAction:action forItem:item];
+        }];
+    [panel setDismissalHandler:^{
+      [weakSelf hideFloatingPreviewAnimated:NO];
+    }];
+    [[viewController button] setHidden:YES];
+    [viewController presentViewController:panel animated:YES completion:nil];
 }
 
 - (void)openFloatingPreviewAction:(NSDictionary<NSString *, id> *)action
@@ -1235,6 +1182,8 @@ NS_ASSUME_NONNULL_END
         kKayokoPreferenceKeyFloatingPreviewColor : kKayokoPreferenceKeyFloatingPreviewColorDefaultValue,
         kKayokoPreferenceKeyFloatingPreviewDockedRight : @(kKayokoPreferenceKeyFloatingPreviewDockedRightDefaultValue),
         kKayokoPreferenceKeyFloatingPreviewVerticalPosition : @(kKayokoPreferenceKeyFloatingPreviewVerticalPositionDefaultValue),
+        kKayokoPreferenceKeyFloatingPanelScale : @(kKayokoPreferenceKeyFloatingPanelScaleDefaultValue),
+        kKayokoPreferenceKeyFloatingPanelColor : kKayokoPreferenceKeyFloatingPanelColorDefaultValue,
         kKayokoPreferenceKeyImageDoubleTapActionURL : kKayokoPreferenceKeyImageDoubleTapActionURLDefaultValue,
         kKayokoPreferenceKeyGestureRecognizerMode : @(kKayokoPreferenceKeyGestureRecognizerModeDefaultValue),
         kKayokoPreferenceKeyMaximumHistoryAmount : @(kKayokoPreferenceKeyMaximumHistoryAmountDefaultValue),

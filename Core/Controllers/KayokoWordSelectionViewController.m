@@ -11,6 +11,7 @@
 #import "KayokoPasteboardItem.h"
 #import "KayokoPasteboardManager.h"
 #import "KayokoQuickAction.h"
+#import "KayokoQuickActionPanelViewController.h"
 #import "KayokoSystemTranslationPresenter.h"
 #import "KayokoWordSelectionView.h"
 
@@ -364,30 +365,15 @@ NS_ASSUME_NONNULL_END
         return;
     }
 
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:nil
-                                                                     message:nil
-                                                              preferredStyle:UIAlertControllerStyleActionSheet];
-    for (NSDictionary<NSString *, id> *action in actions) {
-        NSString *title = action[@"title"];
-        [alert addAction:[UIAlertAction actionWithTitle:title
-                                                   style:UIAlertActionStyleDefault
-                                                 handler:^(__unused UIAlertAction *selectedAction) {
-                                                   [self openTextAction:action];
-                                                 }]];
-    }
-
-    NSBundle *bundle = [KayokoPasteboardManager localizationBundle];
-    NSString *cancelTitle = [bundle localizedStringForKey:@"Cancel" value:@"取消" table:@"Tweak"];
-    [alert addAction:[UIAlertAction actionWithTitle:cancelTitle style:UIAlertActionStyleCancel handler:nil]];
-
-    UIPopoverPresentationController *popover = [alert popoverPresentationController];
-    if (popover) {
-        UIView *sourceView = [[self wordSelectionView] headerView].titleTapControl;
-        [popover setSourceView:sourceView];
-        [popover setSourceRect:[sourceView bounds]];
-        [popover setPermittedArrowDirections:UIPopoverArrowDirectionAny];
-    }
-    [self presentViewController:alert animated:YES completion:nil];
+    __weak typeof(self) weakSelf = self;
+    KayokoQuickActionPanelViewController *panel = [[KayokoQuickActionPanelViewController alloc]
+        initWithActions:actions
+        anchoringAboveView:[[self parentViewController] view]
+        placement:KayokoQuickActionPanelPlacementAboveAnchor
+        selectionHandler:^(NSDictionary<NSString *, id> *action) {
+          [weakSelf openTextAction:action];
+        }];
+    [self presentViewController:panel animated:YES completion:nil];
 }
 
 - (NSArray<NSDictionary<NSString *, id> *> *)loadTextActions {
