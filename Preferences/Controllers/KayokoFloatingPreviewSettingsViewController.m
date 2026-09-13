@@ -67,6 +67,7 @@
 @property(nonatomic, strong) UITableView *tableView;
 @property(nonatomic, strong) UISwitch *enabledSwitch;
 @property(nonatomic, strong) UISwitch *doubleTapActionSwitch;
+@property(nonatomic, strong) UISwitch *countdownRingSwitch;
 @property(nonatomic, strong) UISlider *sizeSlider;
 @property(nonatomic, strong) UILabel *sizeValueLabel;
 @property(nonatomic, strong) UISlider *durationSlider;
@@ -87,6 +88,7 @@
     [self.preferences registerDefaults:@{
         kKayokoPreferenceKeyFloatingPreview : @(kKayokoPreferenceKeyFloatingPreviewDefaultValue),
         kKayokoPreferenceKeyFloatingPreviewDoubleTapAction : @(kKayokoPreferenceKeyFloatingPreviewDoubleTapActionDefaultValue),
+        kKayokoPreferenceKeyFloatingPreviewCountdownRing : @(kKayokoPreferenceKeyFloatingPreviewCountdownRingDefaultValue),
         kKayokoPreferenceKeyFloatingPreviewSize : @(kKayokoPreferenceKeyFloatingPreviewSizeDefaultValue),
         kKayokoPreferenceKeyFloatingPreviewDuration : @(kKayokoPreferenceKeyFloatingPreviewDurationDefaultValue),
         kKayokoPreferenceKeyFloatingPreviewColor : kKayokoPreferenceKeyFloatingPreviewColorDefaultValue,
@@ -101,6 +103,12 @@
     [_doubleTapActionSwitch addTarget:self
                                action:@selector(doubleTapActionSwitchChanged:)
                      forControlEvents:UIControlEventValueChanged];
+
+    _countdownRingSwitch = [[UISwitch alloc] init];
+    [_countdownRingSwitch setOn:[self.preferences boolForKey:kKayokoPreferenceKeyFloatingPreviewCountdownRing]];
+    [_countdownRingSwitch addTarget:self
+                             action:@selector(countdownRingSwitchChanged:)
+                   forControlEvents:UIControlEventValueChanged];
 
     _sizeSlider = [[UISlider alloc] init];
     [_sizeSlider setMinimumValue:kKayokoPreferenceKeyFloatingPreviewSizeMinimumValue];
@@ -198,6 +206,11 @@
     [self postPreferencesReload];
 }
 
+- (void)countdownRingSwitchChanged:(UISwitch *)sender {
+    [self.preferences setBool:[sender isOn] forKey:kKayokoPreferenceKeyFloatingPreviewCountdownRing];
+    [self postPreferencesReload];
+}
+
 - (void)sizeSliderChanged:(UISlider *)sender {
     CGFloat size = MIN(MAX([sender value], kKayokoPreferenceKeyFloatingPreviewSizeMinimumValue),
                        kKayokoPreferenceKeyFloatingPreviewSizeMaximumValue);
@@ -232,7 +245,7 @@
 
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
     (void)tableView;
-    return section == 0 ? 2 : 1;
+    return section == 0 ? 3 : 1;
 }
 
 - (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section {
@@ -274,9 +287,12 @@
     if ([indexPath section] == 0 && [indexPath row] == 0) {
         [[cell textLabel] setText:[self localizedStringForKey:@"Enable Floating Preview"]];
         [cell setAccessoryView:[self enabledSwitch]];
-    } else if ([indexPath section] == 0) {
+    } else if ([indexPath section] == 0 && [indexPath row] == 1) {
         [[cell textLabel] setText:[self localizedStringForKey:@"Double-Tap Action"]];
         [cell setAccessoryView:[self doubleTapActionSwitch]];
+    } else if ([indexPath section] == 0) {
+        [[cell textLabel] setText:[self localizedStringForKey:@"Countdown Light Ring"]];
+        [cell setAccessoryView:[self countdownRingSwitch]];
     } else if ([indexPath section] == 1) {
         [[cell textLabel] setText:[self localizedStringForKey:@"Size"]];
         if ([[self sizeSlider] superview] != [cell contentView]) {

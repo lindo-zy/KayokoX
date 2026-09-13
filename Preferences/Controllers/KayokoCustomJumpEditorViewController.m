@@ -41,8 +41,6 @@
 - (void)viewDidLoad {
     [super viewDidLoad];
     [[self view] setBackgroundColor:[UIColor systemGroupedBackgroundColor]];
-    NSString *titleKey = [self isImageAction] ? @"Edit Image Action" : @"Edit Custom Jump";
-    [self setTitle:[self localizedStringForKey:titleKey]];
 
     [[self navigationItem] setLeftBarButtonItem:[[UIBarButtonItem alloc] initWithTitle:[self localizedStringForKey:@"Cancel"]
                                                                                    style:UIBarButtonItemStylePlain
@@ -131,6 +129,12 @@
     (void)tableView;
     (void)section;
     return 3;
+}
+
+- (NSString *)tableView:(UITableView *)tableView titleForFooterInSection:(NSInteger)section {
+    (void)tableView;
+    (void)section;
+    return [self localizedStringForKey:@"Icon Footer"];
 }
 
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {

@@ -67,6 +67,7 @@
 "Panel Size" = "面板大小";
 "Changing the size scales the icons, text, spacing, and height while keeping the panel width fixed." = "调整大小只会缩放图标、文字、间距和高度，悬浮面板的宽度保持不变。";
 "Enable Floating Preview" = "启用悬浮预览";
+"Countdown Light Ring" = "流光倒计时";
 "Double-Tap Action" = "双击动作";
 "Size" = "大小";
 "Floating Duration" = "悬浮时间";

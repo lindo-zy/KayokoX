@@ -335,23 +335,15 @@ NS_ASSUME_NONNULL_END
         return;
     }
 
-    NSURL *URL = [KayokoQuickAction URLForAction:action input:@""];
-    if (!URL) {
-        [self showActionFailureToast];
-        return;
-    }
-
     __weak typeof(self) weakSelf = self;
-    [[UIApplication sharedApplication] openURL:URL
-                                       options:@{}
-                             completionHandler:^(BOOL success) {
-                               if (success) {
-                                   return;
-                               }
-                               dispatch_async(dispatch_get_main_queue(), ^{
-                                 [weakSelf showActionFailureToast];
-                               });
-                             }];
+    [KayokoQuickAction openAction:action
+                            input:@""
+                completionHandler:^(BOOL success) {
+                  if (success) {
+                      return;
+                  }
+                  [weakSelf showActionFailureToast];
+                }];
 }
 
 - (void)showActionFailureToast {

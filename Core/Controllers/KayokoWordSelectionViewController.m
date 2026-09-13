@@ -382,23 +382,15 @@ NS_ASSUME_NONNULL_END
 
 - (void)openTextAction:(NSDictionary<NSString *, id> *)action {
     NSString *selectedText = [self selectedText] ?: @"";
-    NSURL *URL = [KayokoQuickAction URLForAction:action input:selectedText];
-    if (!URL) {
-        [self showActionFailureToast];
-        return;
-    }
-
     __weak typeof(self) weakSelf = self;
-    [[UIApplication sharedApplication] openURL:URL
-                                       options:@{}
-                             completionHandler:^(BOOL success) {
-                               if (success) {
-                                   return;
-                               }
-                               dispatch_async(dispatch_get_main_queue(), ^{
-                                 [weakSelf showActionFailureToast];
-                               });
-                             }];
+    [KayokoQuickAction openAction:action
+                            input:selectedText
+                completionHandler:^(BOOL success) {
+                  if (success) {
+                      return;
+                  }
+                  [weakSelf showActionFailureToast];
+                }];
 }
 
 - (void)showActionFailureToast {

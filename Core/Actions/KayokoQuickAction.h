@@ -15,7 +15,9 @@ typedef NS_ENUM(NSUInteger, KayokoQuickActionKind) {
 @interface KayokoQuickAction : NSObject
 
 + (NSArray<NSDictionary<NSString *, id> *> *)actionsForKind:(KayokoQuickActionKind)kind;
-+ (nullable NSURL *)URLForAction:(NSDictionary<NSString *, id> *)action input:(nullable NSString *)input;
++ (void)openAction:(NSDictionary<NSString *, id> *)action
+             input:(nullable NSString *)input
+ completionHandler:(nullable void (^)(BOOL success))completionHandler;
 
 @end
 

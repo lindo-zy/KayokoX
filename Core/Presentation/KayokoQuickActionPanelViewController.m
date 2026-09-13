@@ -5,6 +5,7 @@
 
 #import "KayokoQuickActionPanelViewController.h"
 
+#import "KayokoApplicationMetadataProvider.h"
 #import "KayokoPreferenceKeys.h"
 #import "KayokoTagColorFormatter.h"
 
@@ -36,7 +37,19 @@ static CGFloat const kKayokoQuickActionPanelHorizontalInset = 16.0;
         _iconView = [[UIImageView alloc] initWithFrame:CGRectZero];
         [_iconView setContentMode:UIViewContentModeScaleAspectFit];
         [_iconView setTintColor:[UIColor labelColor]];
-        [_iconView setImage:[UIImage systemImageNamed:symbolName] ?: [UIImage systemImageNamed:@"link"]];
+        NSString *iconName = [symbolName length] > 0 ? symbolName : @"link";
+        UIImage *symbolImage = [UIImage systemImageNamed:iconName];
+        UIImage *displayImage = symbolImage;
+        if (!symbolImage) {
+            KayokoApplicationMetadataProvider *metadataProvider = [[KayokoApplicationMetadataProvider alloc] init];
+            if ([metadataProvider hasApplicationForBundleIdentifier:iconName]) {
+                displayImage = [[metadataProvider iconForBundleIdentifier:iconName]
+                    imageWithRenderingMode:UIImageRenderingModeAlwaysOriginal];
+            }
+        }
+        [_iconView setImage:displayImage ?: [UIImage systemImageNamed:@"link"]];
+        [[_iconView layer] setMasksToBounds:YES];
+        [[_iconView layer] setCornerCurve:kCACornerCurveContinuous];
         [_iconView setUserInteractionEnabled:NO];
         [self addSubview:_iconView];
 
@@ -62,6 +75,7 @@ static CGFloat const kKayokoQuickActionPanelHorizontalInset = 16.0;
     [super layoutSubviews];
     CGFloat scale = [self contentScale];
     CGFloat iconSide = 34.0 * scale;
+    [[self iconView] layer].cornerRadius = iconSide * 0.22;
     CGFloat labelHeight = 38.0 * scale;
     CGFloat spacing = 8.0 * scale;
     CGFloat totalHeight = iconSide + spacing + labelHeight;

@@ -11,6 +11,7 @@
 "Image Double-Tap Action" = "Image Double-Tap Action";
 "Fill URL Scheme" = "Fill URL Scheme";
 "Icon" = "Icon";
+"Icon Footer" = "Supports an SF Symbol name or an app Bundle ID.";
 "Jump Link" = "Jump Link";
 "URL" = "url";
 "URL Scheme" = "URL Scheme";

@@ -82,6 +82,9 @@ static UIColor *KayokoFloatingPreviewColorFromHex(NSString *hexColor) {
 @interface KayokoOverlayWindow : UIWindow
 @end
 
+@interface KayokoFloatingPreviewWindow : KayokoOverlayWindow
+@end
+
 NS_ASSUME_NONNULL_BEGIN
 
 @interface KayokoPasteSuppressionState : NSObject
@@ -127,6 +130,15 @@ NS_ASSUME_NONNULL_END
 
 @end
 
+@implementation KayokoFloatingPreviewWindow
+
+- (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
+    UIView *hitView = [super hitTest:point withEvent:event];
+    return hitView == self ? nil : hitView;
+}
+
+@end
+
 @interface KayokoFloatingPreviewView : UIView
 @end
 
@@ -154,9 +166,15 @@ NS_ASSUME_NONNULL_END
 @property(nonatomic, assign) CGFloat bubbleDiameter;
 @property(nonatomic, strong) UIColor *bubbleColor;
 @property(nonatomic, assign) BOOL didMoveDuringPan;
+@property(nonatomic, strong, nullable) CALayer *countdownRingContainer;
+@property(nonatomic, strong, nullable) CAShapeLayer *countdownTrackLayer;
+@property(nonatomic, strong, nullable) CAShapeLayer *countdownArcLayer;
+@property(nonatomic, strong, nullable) CALayer *countdownHeadLayer;
 
 - (void)setPreviewImage:(nullable UIImage *)image;
 - (void)applyBubbleDiameter:(CGFloat)diameter color:(UIColor *)color;
+- (void)startCountdownRingWithDuration:(NSTimeInterval)duration;
+- (void)stopCountdownRing;
 
 @end
 
@@ -167,6 +185,9 @@ static CGFloat const kKayokoFloatingPreviewDefaultDiameter = 64.0;
 // touch the left/right screen edges with no artificial horizontal gap.
 static CGFloat const kKayokoFloatingPreviewHorizontalEdgeInset = 0.0;
 static CGFloat const kKayokoFloatingPreviewVerticalEdgeInset = 12.0;
+// The countdown ring orbits just outside the bubble's rim.
+static CGFloat const kKayokoCountdownRingGap = 3.0;
+static CGFloat const kKayokoCountdownRingStrokeWidth = 3.0;
 
 - (void)loadView {
     [self setView:[[KayokoFloatingPreviewView alloc] initWithFrame:CGRectZero]];
@@ -210,6 +231,7 @@ static CGFloat const kKayokoFloatingPreviewVerticalEdgeInset = 12.0;
     [self setButton:button];
     [self setPanGestureRecognizer:panGestureRecognizer];
     [self setDoubleTapGestureRecognizer:doubleTapGestureRecognizer];
+    [self installCountdownRingLayers];
 }
 
 - (void)viewDidLayoutSubviews {
@@ -229,6 +251,7 @@ static CGFloat const kKayokoFloatingPreviewVerticalEdgeInset = 12.0;
     CGFloat centerX = ([self hasCustomPosition] && ![self dockedRight]) ? minimumCenterX : maximumCenterX;
     centerX = MIN(MAX(centerX, minimumCenterX), MAX(minimumCenterX, maximumCenterX));
     [[self button] setFrame:CGRectMake(centerX - size * 0.5, centerY - size * 0.5, size, size)];
+    [self refreshCountdownRingGeometry];
 }
 
 - (void)applyBubbleDiameter:(CGFloat)diameter color:(UIColor *)color {
@@ -236,6 +259,7 @@ static CGFloat const kKayokoFloatingPreviewVerticalEdgeInset = 12.0;
     [self setBubbleColor:color ?: [UIColor colorWithWhite:0.20 alpha:0.72]];
     [[self button] setBackgroundColor:[[self bubbleColor] colorWithAlphaComponent:0.72]];
     [[self button] layer].cornerRadius = [self bubbleDiameter] * 0.5;
+    [self refreshCountdownRingColors];
     [[self view] setNeedsLayout];
 }
 
@@ -325,6 +349,194 @@ static CGFloat const kKayokoFloatingPreviewVerticalEdgeInset = 12.0;
     [[self doubleTapGestureRecognizer] setEnabled:doubleTapEnabled];
 }
 
+#pragma mark - Countdown Ring
+
+- (UIColor *)countdownRingColor {
+    CGFloat hue = 0.0, saturation = 0.0, brightness = 0.0, alpha = 0.0;
+    if ([[self bubbleColor] getHue:&hue saturation:&saturation brightness:&brightness alpha:&alpha] &&
+        saturation > 0.05) {
+        return [UIColor colorWithHue:hue
+                          saturation:MIN(1.0, saturation * 1.25 + 0.15)
+                          brightness:MIN(1.0, brightness + 0.35)
+                               alpha:1.0];
+    }
+    // Neutral bubble colors get a cyan glow so the ring still reads as light.
+    return [UIColor colorWithHue:0.52 saturation:0.72 brightness:1.0 alpha:1.0];
+}
+
+- (void)installCountdownRingLayers {
+    UIColor *ringColor = [self countdownRingColor];
+    CGFloat stroke = kKayokoCountdownRingStrokeWidth;
+
+    CALayer *container = [[CALayer alloc] init];
+    [container setHidden:YES];
+
+    CAShapeLayer *trackLayer = [CAShapeLayer layer];
+    [trackLayer setFillColor:[[UIColor clearColor] CGColor]];
+    [trackLayer setStrokeColor:[[UIColor colorWithWhite:1.0 alpha:0.15] CGColor]];
+    [trackLayer setLineWidth:stroke];
+
+    CAShapeLayer *arcLayer = [CAShapeLayer layer];
+    [arcLayer setFillColor:[[UIColor clearColor] CGColor]];
+    [arcLayer setStrokeColor:[ringColor CGColor]];
+    [arcLayer setLineWidth:stroke];
+    [arcLayer setLineCap:kCALineCapRound];
+    [arcLayer setShadowColor:[ringColor CGColor]];
+    [arcLayer setShadowOpacity:0.85];
+    [arcLayer setShadowRadius:5.0];
+    [arcLayer setShadowOffset:CGSizeZero];
+
+    CGFloat headSize = stroke * 1.9;
+    CALayer *headLayer = [[CALayer alloc] init];
+    [headLayer setBounds:CGRectMake(0.0, 0.0, headSize, headSize)];
+    [headLayer setCornerRadius:headSize * 0.5];
+    [headLayer setBackgroundColor:[[UIColor whiteColor] CGColor]];
+    [headLayer setShadowColor:[ringColor CGColor]];
+    [headLayer setShadowOpacity:1.0];
+    [headLayer setShadowRadius:4.0];
+    [headLayer setShadowOffset:CGSizeZero];
+
+    [container addSublayer:trackLayer];
+    [container addSublayer:arcLayer];
+    [container addSublayer:headLayer];
+    [[self button].layer addSublayer:container];
+
+    [self setCountdownRingContainer:container];
+    [self setCountdownTrackLayer:trackLayer];
+    [self setCountdownArcLayer:arcLayer];
+    [self setCountdownHeadLayer:headLayer];
+    [self refreshCountdownRingGeometry];
+}
+
+- (void)refreshCountdownRingColors {
+    UIColor *ringColor = [self countdownRingColor];
+    [[self countdownArcLayer] setStrokeColor:[ringColor CGColor]];
+    [[self countdownArcLayer] setShadowColor:[ringColor CGColor]];
+    [[self countdownHeadLayer] setShadowColor:[ringColor CGColor]];
+}
+
+- (void)refreshCountdownRingGeometry {
+    CALayer *container = [self countdownRingContainer];
+    UIButton *button = [self button];
+    if (!container || !button) {
+        return;
+    }
+
+    CGFloat diameter = MAX(1.0, [self bubbleDiameter]);
+    CGFloat side = diameter + 2.0 * kKayokoCountdownRingGap;
+    CGRect frame = CGRectMake(-kKayokoCountdownRingGap, -kKayokoCountdownRingGap, side, side);
+    if (CGRectEqualToRect([container frame], frame)) {
+        return;
+    }
+    [container setFrame:frame];
+
+    CGFloat radius = side * 0.5 - kKayokoCountdownRingStrokeWidth * 0.5;
+    // The stroke path starts at 12 o'clock and runs clockwise, so strokeEnd 1.0
+    // covers the full 360° and unwinding it retreats counter-clockwise.
+    UIBezierPath *circle = [UIBezierPath
+        bezierPathWithArcCenter:CGPointMake(side * 0.5, side * 0.5)
+                         radius:radius
+                     startAngle:-M_PI_2
+                       endAngle:(-M_PI_2 + 2.0 * M_PI)
+                      clockwise:YES];
+    [[self countdownTrackLayer] setFrame:[container bounds]];
+    [[self countdownTrackLayer] setPath:[circle CGPath]];
+    [[self countdownArcLayer] setFrame:[container bounds]];
+    [[self countdownArcLayer] setPath:[circle CGPath]];
+    [[self countdownHeadLayer] setPosition:CGPointMake(side * 0.5, side * 0.5 - radius)];
+}
+
+- (UIBezierPath *)countdownHeadOrbitPath {
+    CGFloat diameter = MAX(1.0, [self bubbleDiameter]);
+    CGFloat side = diameter + 2.0 * kKayokoCountdownRingGap;
+    CGFloat radius = side * 0.5 - kKayokoCountdownRingStrokeWidth * 0.5;
+    return [UIBezierPath
+        bezierPathWithArcCenter:CGPointMake(side * 0.5, side * 0.5)
+                         radius:radius
+                     startAngle:-M_PI_2
+                       endAngle:(-M_PI_2 - 2.0 * M_PI)
+                      clockwise:NO];
+}
+
+- (void)startCountdownRingWithDuration:(NSTimeInterval)duration {
+    CALayer *container = [self countdownRingContainer];
+    CAShapeLayer *arcLayer = [self countdownArcLayer];
+    CALayer *headLayer = [self countdownHeadLayer];
+    if (!container || !arcLayer || !headLayer || duration <= 0.0) {
+        [self stopCountdownRing];
+        return;
+    }
+
+    [self refreshCountdownRingGeometry];
+    CGPoint headHomePosition = [headLayer position];
+
+    CAMediaTimingFunction *linear = [CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionLinear];
+    CAKeyframeAnimation *arcFadeAnimation = [CAKeyframeAnimation animationWithKeyPath:@"opacity"];
+    [arcFadeAnimation setValues:@[ @1.0, @1.0, @0.0 ]];
+    [arcFadeAnimation setKeyTimes:@[ @0.0, @0.96, @1.0 ]];
+    [arcFadeAnimation setDuration:duration];
+    [arcFadeAnimation setTimingFunction:linear];
+    [arcFadeAnimation setFillMode:kCAFillModeForwards];
+    [arcFadeAnimation setRemovedOnCompletion:NO];
+
+    CAKeyframeAnimation *headFadeAnimation = [CAKeyframeAnimation animationWithKeyPath:@"opacity"];
+    [headFadeAnimation setValues:@[ @1.0, @1.0, @0.0 ]];
+    [headFadeAnimation setKeyTimes:@[ @0.0, @0.96, @1.0 ]];
+    [headFadeAnimation setDuration:duration];
+    [headFadeAnimation setTimingFunction:linear];
+    [headFadeAnimation setFillMode:kCAFillModeForwards];
+    [headFadeAnimation setRemovedOnCompletion:NO];
+
+    [CATransaction begin];
+    [CATransaction setDisableActions:YES];
+    for (CALayer *layer in [container sublayers]) {
+        [layer removeAllAnimations];
+    }
+    // Model reset and animation registration share one transaction, so the ring
+    // never flashes its pre-animation full-circle state between frames.
+    [container setHidden:NO];
+    [arcLayer setStrokeStart:0.0];
+    [arcLayer setStrokeEnd:1.0];
+    [arcLayer setOpacity:1.0];
+    [headLayer setOpacity:1.0];
+    [headLayer setPosition:headHomePosition];
+
+    // The sweep and the head dot share the duration of the auto-hide countdown,
+    // so the light dies out exactly when the bubble hides itself.
+    CABasicAnimation *sweepAnimation = [CABasicAnimation animationWithKeyPath:@"strokeEnd"];
+    [sweepAnimation setFromValue:@1.0];
+    [sweepAnimation setToValue:@0.0];
+    [sweepAnimation setDuration:duration];
+    [sweepAnimation setTimingFunction:linear];
+    [sweepAnimation setFillMode:kCAFillModeForwards];
+    [sweepAnimation setRemovedOnCompletion:NO];
+    [arcLayer addAnimation:sweepAnimation forKey:@"kayokoCountdownSweep"];
+    [arcLayer addAnimation:arcFadeAnimation forKey:@"kayokoCountdownFade"];
+
+    CAKeyframeAnimation *orbitAnimation = [CAKeyframeAnimation animationWithKeyPath:@"position"];
+    [orbitAnimation setPath:[[self countdownHeadOrbitPath] CGPath]];
+    [orbitAnimation setCalculationMode:kCAAnimationPaced];
+    [orbitAnimation setDuration:duration];
+    [orbitAnimation setTimingFunction:linear];
+    [orbitAnimation setFillMode:kCAFillModeForwards];
+    [orbitAnimation setRemovedOnCompletion:NO];
+    [headLayer addAnimation:orbitAnimation forKey:@"kayokoCountdownOrbit"];
+    [headLayer addAnimation:headFadeAnimation forKey:@"kayokoCountdownFade"];
+    [CATransaction commit];
+}
+
+- (void)stopCountdownRing {
+    CALayer *container = [self countdownRingContainer];
+    if (!container) {
+        return;
+    }
+
+    for (CALayer *layer in [container sublayers]) {
+        [layer removeAllAnimations];
+    }
+    [container setHidden:YES];
+}
+
 @end
 
 @implementation KayokoPasteSuppressionState
@@ -394,6 +606,7 @@ NS_ASSUME_NONNULL_BEGIN
 @property(nonatomic, assign) BOOL privacyMode;
 @property(nonatomic, assign) BOOL floatingPreview;
 @property(nonatomic, assign) BOOL floatingPreviewDoubleTapAction;
+@property(nonatomic, assign) BOOL floatingPreviewCountdownRing;
 @property(nonatomic, assign) CGFloat floatingPreviewSize;
 @property(nonatomic, assign) CGFloat floatingPreviewDuration;
 @property(nonatomic, strong) UIColor *floatingPreviewColor;
@@ -676,7 +889,7 @@ NS_ASSUME_NONNULL_END
     }
 
     if (!self.floatingPreviewWindow) {
-        UIWindow *window = [[KayokoOverlayWindow alloc] initWithWindowScene:windowScene];
+        UIWindow *window = [[KayokoFloatingPreviewWindow alloc] initWithWindowScene:windowScene];
         [window setBackgroundColor:[UIColor clearColor]];
         [window setOpaque:NO];
         [window setClipsToBounds:YES];
@@ -754,6 +967,7 @@ NS_ASSUME_NONNULL_END
     [[viewController button] setHidden:NO];
 
     void (^hide)(void) = ^{
+      [viewController stopCountdownRing];
       [[viewController view] setAlpha:0.0];
       [[viewController view] setTransform:CGAffineTransformMakeScale(0.82, 0.82)];
       [window setHidden:YES];
@@ -823,6 +1037,16 @@ NS_ASSUME_NONNULL_END
     [window setHidden:NO];
     [window bringSubviewToFront:[viewController view]];
 
+    NSTimeInterval duration = MIN(MAX(self.floatingPreviewDuration,
+                                      kKayokoPreferenceKeyFloatingPreviewDurationMinimumValue),
+                                  kKayokoPreferenceKeyFloatingPreviewDurationMaximumValue);
+    // The rim light sweep covers exactly the auto-hide countdown window.
+    if (self.floatingPreviewCountdownRing) {
+        [viewController startCountdownRingWithDuration:duration];
+    } else {
+        [viewController stopCountdownRing];
+    }
+
     [UIView animateWithDuration:0.18
         animations:^{
           [[viewController view] setAlpha:1.0];
@@ -842,9 +1066,6 @@ NS_ASSUME_NONNULL_END
       [strongSelf hideFloatingPreviewAnimated:YES];
     });
     self.floatingPreviewExpirationBlock = expirationBlock;
-    NSTimeInterval duration = MIN(MAX(self.floatingPreviewDuration,
-                                      kKayokoPreferenceKeyFloatingPreviewDurationMinimumValue),
-                                  kKayokoPreferenceKeyFloatingPreviewDurationMaximumValue);
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(duration * NSEC_PER_SEC)),
                    dispatch_get_main_queue(), expirationBlock);
 }
@@ -910,12 +1131,6 @@ NS_ASSUME_NONNULL_END
 - (void)openFloatingPreviewAction:(NSDictionary<NSString *, id> *)action
                           forItem:(KayokoPasteboardItem *)item {
     BOOL isImageItem = [[item imageName] length] > 0;
-    NSURL *URL = [KayokoQuickAction URLForAction:action input:isImageItem ? @"" : ([item content] ?: @"")];
-    if (!URL) {
-        [self hideFloatingPreviewAnimated:NO];
-        [self playFailureHapticFeedbackIfNeeded];
-        return;
-    }
     if (isImageItem) {
         if (![[KayokoPasteboardManager sharedInstance] copyPasteboardItemToPasteboard:item]) {
             [self hideFloatingPreviewAnimated:NO];
@@ -929,13 +1144,13 @@ NS_ASSUME_NONNULL_END
 
     [self hideFloatingPreviewAnimated:NO];
     __weak typeof(self) weakSelf = self;
-    [[UIApplication sharedApplication] openURL:URL
-                                       options:@{}
-                             completionHandler:^(BOOL success) {
-                               if (!success) {
-                                   [weakSelf playFailureHapticFeedbackIfNeeded];
-                               }
-                             }];
+    [KayokoQuickAction openAction:action
+                            input:isImageItem ? @"" : ([item content] ?: @"")
+                completionHandler:^(BOOL success) {
+                  if (!success) {
+                      [weakSelf playFailureHapticFeedbackIfNeeded];
+                  }
+                }];
 }
 
 - (void)applyOverlayWindowFrame:(UIWindow *)window {
@@ -1177,6 +1392,7 @@ NS_ASSUME_NONNULL_END
         kKayokoPreferenceKeyPrivacyMode : @(kKayokoPreferenceKeyPrivacyModeDefaultValue),
         kKayokoPreferenceKeyFloatingPreview : @(kKayokoPreferenceKeyFloatingPreviewDefaultValue),
         kKayokoPreferenceKeyFloatingPreviewDoubleTapAction : @(kKayokoPreferenceKeyFloatingPreviewDoubleTapActionDefaultValue),
+        kKayokoPreferenceKeyFloatingPreviewCountdownRing : @(kKayokoPreferenceKeyFloatingPreviewCountdownRingDefaultValue),
         kKayokoPreferenceKeyFloatingPreviewSize : @(kKayokoPreferenceKeyFloatingPreviewSizeDefaultValue),
         kKayokoPreferenceKeyFloatingPreviewDuration : @(kKayokoPreferenceKeyFloatingPreviewDurationDefaultValue),
         kKayokoPreferenceKeyFloatingPreviewColor : kKayokoPreferenceKeyFloatingPreviewColorDefaultValue,
@@ -1215,6 +1431,8 @@ NS_ASSUME_NONNULL_END
     self.floatingPreview = [[self.preferences objectForKey:kKayokoPreferenceKeyFloatingPreview] boolValue];
     self.floatingPreviewDoubleTapAction =
         [[self.preferences objectForKey:kKayokoPreferenceKeyFloatingPreviewDoubleTapAction] boolValue];
+    self.floatingPreviewCountdownRing =
+        [[self.preferences objectForKey:kKayokoPreferenceKeyFloatingPreviewCountdownRing] boolValue];
     self.floatingPreviewSize = [[self.preferences objectForKey:kKayokoPreferenceKeyFloatingPreviewSize] doubleValue];
     if (!isfinite(self.floatingPreviewSize)) {
         self.floatingPreviewSize = kKayokoPreferenceKeyFloatingPreviewSizeDefaultValue;

@@ -32,6 +32,12 @@ GPLv3. See [`COPYING`](COPYING).
 ### 文本动作
 添加文本动作后，在内容操作界面，点击"链接+"图标，可以快速跳转操作，配置多个动作则出现列表选择，配置一个默认打开
 
+跳转链接支持两种写法：
+- URL Scheme / 网址链接，如 `alipays://platformapi/startapp?saId=10000007`；
+- 应用 Bundle ID，如 `com.tencent.xin`，动作执行时直接打开对应 App（应用未安装则提示失败）。
+
+链接中的 `$$$` 或 `@@@` 会被替换为当前文本内容（图片动作为空）。图标条目支持 SF Symbol 名称或应用 Bundle ID，留空默认 `link`。
+
 ![3.jpeg](docs/3.png)
 
 ![3-1.jpeg](docs/3-1.png)
