@@ -5,8 +5,10 @@
 
 #import "KayokoCustomJumpTableViewCell.h"
 #import "KayokoCustomJump.h"
+#import "KayokoAppInfo.h"
 
 @interface KayokoCustomJumpTableViewCell ()
+@property(nonatomic, strong) UIImageView *iconView;
 @property(nonatomic, strong) UILabel *titleLabel;
 @property(nonatomic, strong) UILabel *linkLabel;
 @end
@@ -25,6 +27,12 @@
     [self setSelectionStyle:UITableViewCellSelectionStyleDefault];
     [[self contentView] setPreservesSuperviewLayoutMargins:YES];
 
+    _iconView = [[UIImageView alloc] init];
+    [_iconView setTranslatesAutoresizingMaskIntoConstraints:NO];
+    [_iconView setContentMode:UIViewContentModeScaleAspectFit];
+    [_iconView setTintColor:[UIColor labelColor]];
+    [[self contentView] addSubview:_iconView];
+
     _titleLabel = [[UILabel alloc] init];
     [_titleLabel setTranslatesAutoresizingMaskIntoConstraints:NO];
     [_titleLabel setFont:[UIFont systemFontOfSize:16.0 weight:UIFontWeightRegular]];
@@ -42,7 +50,11 @@
 
     UILayoutGuide *margins = [[self contentView] layoutMarginsGuide];
     [NSLayoutConstraint activateConstraints:@[
-        [[_titleLabel leadingAnchor] constraintEqualToAnchor:[margins leadingAnchor]],
+        [[_iconView widthAnchor] constraintEqualToConstant:38.0],
+        [[_iconView heightAnchor] constraintEqualToConstant:38.0],
+        [[_iconView leadingAnchor] constraintEqualToAnchor:[margins leadingAnchor]],
+        [[_iconView centerYAnchor] constraintEqualToAnchor:[[self contentView] centerYAnchor]],
+        [[_titleLabel leadingAnchor] constraintEqualToAnchor:[_iconView trailingAnchor] constant:12.0],
         [[_titleLabel trailingAnchor] constraintEqualToAnchor:[margins trailingAnchor]],
         [[_titleLabel topAnchor] constraintEqualToAnchor:[[self contentView] topAnchor] constant:9.0],
         [[_linkLabel leadingAnchor] constraintEqualToAnchor:[_titleLabel leadingAnchor]],
@@ -60,7 +72,25 @@
         ? [jump shortcutType]
         : [jump link];
     [[self linkLabel] setText:link];
+    [[self iconView] setImage:[self displayImageForJump:jump]];
     [self setAccessoryType:editing ? UITableViewCellAccessoryNone : UITableViewCellAccessoryDisclosureIndicator];
+}
+
+- (UIImage *)displayImageForJump:(KayokoCustomJump *)jump {
+    NSString *iconName = [jump icon];
+    if ([iconName length] > 0 && [KayokoAppInfo isValidBundleIdentifier:iconName]) {
+        UIImage *appIcon = [KayokoAppInfo iconForBundleID:iconName];
+        if (appIcon) {
+            return appIcon;
+        }
+    }
+    // Blank or unknown icon names fall back to the shared default symbol so
+    // every row keeps an identifiable glyph like the panel buttons do.
+    NSString *symbolName = iconName;
+    if ([symbolName length] == 0 || ![UIImage systemImageNamed:symbolName]) {
+        symbolName = kKayokoCustomJumpDefaultIconName;
+    }
+    return [UIImage systemImageNamed:symbolName];
 }
 
 - (void)setEditing:(BOOL)editing animated:(BOOL)animated {

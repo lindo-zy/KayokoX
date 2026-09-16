@@ -37,6 +37,8 @@ static NSInteger const kKayokoLegacyRowLink = 2;
 @property(nonatomic, strong) UITextView *payloadTextView;
 @property(nonatomic, strong) UILabel *payloadPlaceholderLabel;
 @property(nonatomic, strong) UITableViewCell *payloadBoxCell;
+@property(nonatomic, strong) UIView *iconPreviewContainer;
+@property(nonatomic, strong) UIImageView *iconPreviewImageView;
 @property(nonatomic, strong) KayokoKeyboardAvoidanceCoordinator *keyboardAvoidanceCoordinator;
 @property(nonatomic, assign) BOOL didFocusTitleTextFieldInitially;
 // The type is fixed for the life of the entry (chosen in the add flow's type
@@ -85,13 +87,8 @@ static NSInteger const kKayokoLegacyRowLink = 2;
                                                                                     style:UIBarButtonItemStyleDone
                                                                                    target:self
                                                                                    action:@selector(finishEditing)]];
-    // Every type gets its own page title; only legacy (typeless) entries keep
-    // the generic custom-action one.
-    NSString *titleKey = [self isDisplayedTypeOpenApp]     ? @"Open App Settings"
-                         : [self isDisplayedTypeShortcut]  ? @"Shortcut Settings"
-                         : [self usesLargePayloadBox]      ? @"URL Scheme Settings"
-                                                           : @"Custom Action Settings";
-    [self setTitle:[self localizedStringForKey:titleKey]];
+    // Every type shares the same generic page title.
+    [self setTitle:[self localizedStringForKey:@"Action"]];
 
     [self configureFields];
     [self configureTableView];
@@ -119,12 +116,6 @@ static NSInteger const kKayokoLegacyRowLink = 2;
 #pragma mark - Setup
 
 - (NSString *)defaultIconName {
-    if ([self isDisplayedTypeOpenApp]) {
-        return @"apps.iphone";
-    }
-    if ([self isDisplayedTypeShortcut]) {
-        return @"square.grid.2x2";
-    }
     return kKayokoCustomJumpDefaultIconName;
 }
 
@@ -337,13 +328,55 @@ static NSInteger const kKayokoLegacyRowLink = 2;
     if (row == kKayokoLegacyRowName || row == kKayokoActionRowName) {
         field = [self titleTextField];
     } else if (row == kKayokoLegacyRowIcon || row == kKayokoActionRowIcon) {
-        field = [self iconTextField];
+        [cell setAccessoryView:[self iconAccessoryView]];
+        return cell;
     } else if (row == kKayokoLegacyRowLink) {
         field = [self linkTextField];
     }
     [field setFrame:CGRectMake(0.0, 0.0, 220.0, 36.0)];
     [cell setAccessoryView:field];
     return cell;
+}
+
+// The 图标 row's accessory is a preview thumbnail followed by the edit field;
+// the thumbnail mirrors what the entry will actually render (SF Symbol name or
+// app bundle identifier) and refreshes on every keystroke.
+- (UIView *)iconAccessoryView {
+    if (![self iconPreviewContainer]) {
+        UIView *container = [[UIView alloc] initWithFrame:CGRectMake(0.0, 0.0, 267.0, 36.0)];
+        UIImageView *preview = [[UIImageView alloc] initWithFrame:CGRectMake(0.0, 3.5, 29.0, 29.0)];
+        [preview setContentMode:UIViewContentModeScaleAspectFit];
+        [preview setTintColor:[UIColor labelColor]];
+        [container addSubview:preview];
+        [[self iconTextField] setFrame:CGRectMake(38.0, 0.0, 220.0, 36.0)];
+        [container addSubview:[self iconTextField]];
+        [[self iconTextField] addTarget:self
+                                 action:@selector(refreshIconPreview)
+                       forControlEvents:UIControlEventEditingChanged];
+        [self setIconPreviewImageView:preview];
+        [self setIconPreviewContainer:container];
+        [self refreshIconPreview];
+    }
+    return [self iconPreviewContainer];
+}
+
+- (void)refreshIconPreview {
+    [[self iconPreviewImageView] setImage:[self previewImageForIconText:[[self iconTextField] text]]];
+}
+
+- (UIImage *)previewImageForIconText:(NSString *)text {
+    NSString *name = [self trimmedValue:text];
+    if ([name length] > 0 && [KayokoAppInfo isValidBundleIdentifier:name]) {
+        UIImage *appIcon = [KayokoAppInfo iconForBundleID:name];
+        if (appIcon) {
+            return appIcon;
+        }
+    }
+    NSString *symbolName = name;
+    if ([symbolName length] == 0 || ![UIImage systemImageNamed:symbolName]) {
+        symbolName = [self defaultIconName];
+    }
+    return [UIImage systemImageNamed:symbolName];
 }
 
 // The payload box is a single fixed cell kept in a property: its text view
@@ -434,6 +467,7 @@ static NSInteger const kKayokoLegacyRowLink = 2;
       // reference behavior; the user can still override either.
       [[strongSelf titleTextField] setText:name];
       [[strongSelf iconTextField] setText:bundleID];
+      [strongSelf refreshIconPreview];
       [strongSelf.tableView reloadRowsAtIndexPaths:@[ [NSIndexPath indexPathForRow:kKayokoActionRowPayload
                                                                          inSection:0] ]
                                   withRowAnimation:UITableViewRowAnimationNone];
@@ -452,11 +486,13 @@ static NSInteger const kKayokoLegacyRowLink = 2;
       [strongSelf setPickedLink:bundleID];
       [strongSelf setPendingShortcutType:type];
       [[strongSelf iconTextField] setText:bundleID];
+      [strongSelf refreshIconPreview];
       // A freshly added action takes the menu item's own title as its label
       // until the user types one; re-picking never clobbers a custom name.
       NSString *currentTitle = [[[strongSelf titleTextField] text]
           stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-      if ([currentTitle length] == 0 || [currentTitle isEqualToString:[strongSelf localizedStringForKey:@"Untitled"]]) {
+      if ([currentTitle length] == 0 || [currentTitle isEqualToString:[strongSelf localizedStringForKey:@"Untitled"]] ||
+          [currentTitle isEqualToString:[strongSelf localizedStringForKey:@"Action"]]) {
           [[strongSelf titleTextField] setText:title];
       }
       [strongSelf.tableView reloadRowsAtIndexPaths:@[ [NSIndexPath indexPathForRow:kKayokoActionRowPayload

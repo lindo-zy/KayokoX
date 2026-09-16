@@ -8,38 +8,36 @@
 #import "KayokoCustomJumpStore.h"
 #import "KayokoCustomJumpTableViewCell.h"
 #import "KayokoCustomJumpEditorViewController.h"
-#import "KayokoKeyboardAvoidanceCoordinator.h"
 #import "KayokoTagPlaceholderView.h"
 
 static NSString *const kKayokoCustomJumpCellReuseIdentifier = @"KayokoCustomJumpCell";
+static NSString *const kKayokoActionTypeCellReuseIdentifier = @"KayokoActionTypeCell";
 static CGFloat const kKayokoCustomJumpPlaceholderMinimumHeight = 96.0;
+static NSInteger const kKayokoSectionSelectedActions = 0;
+static NSInteger const kKayokoSectionChooseAction = 1;
 
-@interface KayokoCustomJumpManagementViewController () <UITableViewDataSource, UITableViewDelegate,
-                                                        UISearchResultsUpdating, UISearchControllerDelegate>
+// The list page mirrors the reference layout: configured actions on top, the
+// fixed add-action entries below, and a single Edit toggle driving both batch
+// deletion and drag reordering.
+@interface KayokoCustomJumpManagementViewController () <UITableViewDataSource, UITableViewDelegate>
 @property(nonatomic, strong) UITableView *tableView;
 @property(nonatomic, strong) KayokoTagPlaceholderView *placeholderView;
-@property(nonatomic, strong) UISearchController *searchController;
 @property(nonatomic, strong) NSMutableArray<KayokoCustomJump *> *jumps;
-@property(nonatomic, strong) NSMutableArray<KayokoCustomJump *> *filteredJumps;
 @property(nonatomic, strong) NSMutableSet<NSString *> *selectedJumpUUIDs;
 @property(nonatomic, strong) KayokoCustomJumpStore *jumpStore;
 @property(nonatomic, strong) NSBundle *localizationBundle;
-@property(nonatomic, strong) KayokoKeyboardAvoidanceCoordinator *keyboardAvoidanceCoordinator;
 @property(nonatomic, strong) UIBarButtonItem *toolbarFlexibleSpaceItem;
-@property(nonatomic, strong) UIBarButtonItem *addToolbarItem;
 @property(nonatomic, strong) UIBarButtonItem *selectToolbarItem;
 @property(nonatomic, strong) UIBarButtonItem *deleteToolbarItem;
-@property(nonatomic, assign, getter=isSearchInterfaceActive) BOOL searchInterfaceActive;
-@property(nonatomic, assign) CGFloat keyboardBottomInset;
 @property(nonatomic, assign, getter=isUpdatingPlaceholderLayout) BOOL updatingPlaceholderLayout;
 - (UIBarButtonItem *)editDoneButton;
 - (void)updateToolbarItems;
 - (void)toggleSelectAll;
 - (void)deleteSelectedJumps;
-- (BOOL)allDisplayedJumpsSelected;
-- (NSSet<NSString *> *)selectedDisplayedJumpUUIDs;
-- (void)reloadTableForSearchStateChangeFromSearching:(BOOL)wasSearching;
-- (void)syncDisplayedSelectionState;
+- (BOOL)allJumpsSelected;
+- (NSArray<NSString *> *)availableActionTypes;
+- (void)addJumpWithType:(NSString *)type;
+- (void)updatePlaceholderVisibility;
 @end
 
 @implementation KayokoCustomJumpManagementViewController
@@ -59,7 +57,6 @@ static CGFloat const kKayokoCustomJumpPlaceholderMinimumHeight = 96.0;
 
     _localizationBundle = [NSBundle bundleForClass:[self class]];
     _jumps = [[NSMutableArray alloc] init];
-    _filteredJumps = [[NSMutableArray alloc] init];
     _selectedJumpUUIDs = [[NSMutableSet alloc] init];
     NSString *jumpsPath = [[self class] isImageActionManagement] ? [KayokoCustomJumpStore defaultImageActionsPath]
                                                                   : [KayokoCustomJumpStore defaultJumpsPath];
@@ -68,7 +65,6 @@ static CGFloat const kKayokoCustomJumpPlaceholderMinimumHeight = 96.0;
     [self setTitle:[self localizedStringForKey:[[self class] isImageActionManagement] ? @"Image Actions" : @"Custom Jumps"]];
     [self loadJumps];
     [self configureNavigationItem];
-    [self configureSearchController];
     [self configureTableView];
     [self configurePlaceholderView];
     [self configureToolbarItems];
@@ -83,16 +79,7 @@ static CGFloat const kKayokoCustomJumpPlaceholderMinimumHeight = 96.0;
 
 - (void)viewWillAppear:(BOOL)animated {
     [super viewWillAppear:animated];
-    [[self navigationController] setToolbarHidden:NO animated:animated];
-    [[self keyboardAvoidanceCoordinator] startObserving];
-}
-
-- (void)viewWillDisappear:(BOOL)animated {
-    [super viewWillDisappear:animated];
-    [[self keyboardAvoidanceCoordinator] stopObservingAndRestoreInsets];
-    if ([self isMovingFromParentViewController] || [[self navigationController] isBeingDismissed]) {
-        [[self navigationController] setToolbarHidden:YES animated:animated];
-    }
+    [[self navigationController] setToolbarHidden:YES animated:animated];
 }
 
 - (void)loadJumps {
@@ -105,21 +92,8 @@ static CGFloat const kKayokoCustomJumpPlaceholderMinimumHeight = 96.0;
     [[self jumps] addObjectsFromArray:loadedJumps];
 }
 
-- (void)configureSearchController {
-    _searchController = [[UISearchController alloc] initWithSearchResultsController:nil];
-    [_searchController setSearchResultsUpdater:self];
-    [_searchController setDelegate:self];
-    [_searchController setObscuresBackgroundDuringPresentation:NO];
-    [_searchController setHidesNavigationBarDuringPresentation:NO];
-    NSString *searchKey = [[self class] isImageActionManagement] ? @"Search Image Actions…" : @"Search Custom Jumps…";
-    [[_searchController searchBar] setPlaceholder:[self localizedStringForKey:searchKey]];
-    [self setDefinesPresentationContext:YES];
-    [[self navigationItem] setSearchController:_searchController];
-    [[self navigationItem] setHidesSearchBarWhenScrolling:YES];
-}
-
 - (void)configureTableView {
-    _tableView = [[UITableView alloc] initWithFrame:CGRectZero style:UITableViewStylePlain];
+    _tableView = [[UITableView alloc] initWithFrame:CGRectZero style:UITableViewStyleInsetGrouped];
     [_tableView setTranslatesAutoresizingMaskIntoConstraints:NO];
     [_tableView setDataSource:self];
     [_tableView setDelegate:self];
@@ -127,6 +101,8 @@ static CGFloat const kKayokoCustomJumpPlaceholderMinimumHeight = 96.0;
     [_tableView setRowHeight:64.0];
     [_tableView registerClass:[KayokoCustomJumpTableViewCell class]
        forCellReuseIdentifier:kKayokoCustomJumpCellReuseIdentifier];
+    [_tableView registerClass:[UITableViewCell class]
+       forCellReuseIdentifier:kKayokoActionTypeCellReuseIdentifier];
     [[self view] addSubview:_tableView];
     [NSLayoutConstraint activateConstraints:@[
         [[_tableView topAnchor] constraintEqualToAnchor:[[self view] topAnchor]],
@@ -134,15 +110,6 @@ static CGFloat const kKayokoCustomJumpPlaceholderMinimumHeight = 96.0;
         [[_tableView trailingAnchor] constraintEqualToAnchor:[[self view] trailingAnchor]],
         [[_tableView bottomAnchor] constraintEqualToAnchor:[[self view] bottomAnchor]]
     ]];
-
-    _keyboardAvoidanceCoordinator = [[KayokoKeyboardAvoidanceCoordinator alloc] initWithView:[self view]
-                                                                                     scrollView:_tableView];
-    __weak typeof(self) weakSelf = self;
-    [_keyboardAvoidanceCoordinator setKeyboardBottomInsetChangeHandler:^(CGFloat keyboardBottomInset) {
-      [weakSelf setKeyboardBottomInset:keyboardBottomInset];
-      [weakSelf updatePlaceholderLayout];
-      [[weakSelf placeholderView] layoutIfNeeded];
-    }];
 }
 
 - (void)configurePlaceholderView {
@@ -154,10 +121,6 @@ static CGFloat const kKayokoCustomJumpPlaceholderMinimumHeight = 96.0;
     _toolbarFlexibleSpaceItem = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace
                                                                                 target:nil
                                                                                 action:nil];
-    _addToolbarItem = [[UIBarButtonItem alloc] initWithTitle:[self localizedStringForKey:@"Add"]
-                                                       style:UIBarButtonItemStylePlain
-                                                      target:self
-                                                      action:@selector(addJump)];
     _selectToolbarItem = [[UIBarButtonItem alloc] initWithTitle:[self localizedStringForKey:@"Select All"]
                                                           style:UIBarButtonItemStylePlain
                                                          target:self
@@ -199,20 +162,21 @@ static CGFloat const kKayokoCustomJumpPlaceholderMinimumHeight = 96.0;
     if (!editing) {
         [[self selectedJumpUUIDs] removeAllObjects];
     }
+    [[self navigationController] setToolbarHidden:!editing animated:animated];
     [self updateToolbarItems];
 }
 
 - (void)updateToolbarItems {
     NSArray<UIBarButtonItem *> *toolbarItems = nil;
-    if (![self isEditing]) {
-        toolbarItems = [self isSearching] ? @[] : @[ [self toolbarFlexibleSpaceItem], [self addToolbarItem] ];
-    } else {
-        NSString *title = [self allDisplayedJumpsSelected] ? [self localizedStringForKey:@"Deselect All"]
-                                                           : [self localizedStringForKey:@"Select All"];
+    if ([self isEditing]) {
+        NSString *title = [self allJumpsSelected] ? [self localizedStringForKey:@"Deselect All"]
+                                                  : [self localizedStringForKey:@"Select All"];
         [[self selectToolbarItem] setTitle:title];
-        [[self selectToolbarItem] setEnabled:[[self displayedJumps] count] > 0];
-        [[self deleteToolbarItem] setEnabled:[[self selectedDisplayedJumpUUIDs] count] > 0];
+        [[self selectToolbarItem] setEnabled:[[self jumps] count] > 0];
+        [[self deleteToolbarItem] setEnabled:[[self selectedJumpUUIDs] count] > 0];
         toolbarItems = @[ [self selectToolbarItem], [self toolbarFlexibleSpaceItem], [self deleteToolbarItem] ];
+    } else {
+        toolbarItems = @[];
     }
 
     if (![[self toolbarItems] isEqualToArray:toolbarItems]) {
@@ -220,39 +184,39 @@ static CGFloat const kKayokoCustomJumpPlaceholderMinimumHeight = 96.0;
     }
 }
 
-- (void)addJump {
-    if ([self isSearching]) {
-        [[[self searchController] searchBar] setText:@""];
-        [[self searchController] setActive:NO];
-        [[self tableView] reloadData];
-    }
+#pragma mark - Adding
 
-    // 添加 flow: the type is chosen first (URL Scheme, 打开应用, 快捷方式);
-    // nothing touches the store here — the action joins the list only when
-    // the editor's 完成 reports the finished entry, so backing out of the
-    // editor never leaves a half-configured row behind.
-    UIAlertController *chooser = [UIAlertController alertControllerWithTitle:[self localizedStringForKey:@"Choose Action Type"]
-                                                                      message:nil
-                                                               preferredStyle:UIAlertControllerStyleAlert];
-    for (NSString *type in @[ kKayokoCustomJumpTypeURLScheme, kKayokoCustomJumpTypeOpenApp, kKayokoCustomJumpTypeShortcut ]) {
-        NSString *displayName = [type isEqualToString:kKayokoCustomJumpTypeURLScheme] ? [self localizedStringForKey:@"URL Scheme"]
-            : [type isEqualToString:kKayokoCustomJumpTypeOpenApp]   ? [self localizedStringForKey:@"Open App"]
-                                                                    : [self localizedStringForKey:@"Shortcut"];
-        [chooser addAction:[UIAlertAction actionWithTitle:displayName
-                                                    style:UIAlertActionStyleDefault
-                                                  handler:^(__unused UIAlertAction *action) {
-                                                    [self presentEditorForNewJumpWithType:type];
-                                                  }]];
-    }
-    [chooser addAction:[UIAlertAction actionWithTitle:[self localizedStringForKey:@"Cancel"]
-                                                style:UIAlertActionStyleCancel
-                                              handler:nil]];
-    [self presentViewController:chooser animated:YES completion:nil];
+- (NSArray<NSString *> *)availableActionTypes {
+    return @[ kKayokoCustomJumpTypeURLScheme, kKayokoCustomJumpTypeOpenApp, kKayokoCustomJumpTypeShortcut ];
 }
 
-- (void)presentEditorForNewJumpWithType:(NSString *)type {
+- (NSString *)displayNameForActionType:(NSString *)type {
+    if ([type isEqualToString:kKayokoCustomJumpTypeOpenApp]) {
+        return [self localizedStringForKey:@"Open App"];
+    }
+    if ([type isEqualToString:kKayokoCustomJumpTypeShortcut]) {
+        return [self localizedStringForKey:@"Shortcut"];
+    }
+    return [self localizedStringForKey:@"URL Scheme"];
+}
+
+- (UIImage *)iconForActionType:(NSString *)type {
+    NSString *symbolName = [type isEqualToString:kKayokoCustomJumpTypeOpenApp]      ? @"apps.iphone"
+        : [type isEqualToString:kKayokoCustomJumpTypeShortcut]                      ? @"square.grid.2x2"
+                                                                                    : kKayokoCustomJumpDefaultIconName;
+    return [UIImage systemImageNamed:symbolName];
+}
+
+- (void)addJumpWithType:(NSString *)type {
+    // Adding happens straight from the fixed option rows; nothing touches the
+    // store here — the action joins the list only when the editor's 完成
+    // reports the finished entry, so backing out of the editor never leaves a
+    // half-configured row behind.
+    // New entries start with the generic 动作 title so a bare add+完成 round
+    // trip still produces a readable row; the user can rename or let the
+    // pickers fill in the app/shortcut identity.
     KayokoCustomJump *jump = [[KayokoCustomJump alloc] initWithUUID:[[NSUUID UUID] UUIDString]
-                                                              title:@""
+                                                              title:[self localizedStringForKey:@"Action"]
                                                                link:@""
                                                                icon:nil
                                                                type:type
@@ -272,7 +236,8 @@ static CGFloat const kKayokoCustomJumpPlaceholderMinimumHeight = 96.0;
       }
       [[strongSelf jumps] addObject:updatedJump];
       [strongSelf updatePlaceholderVisibility];
-      NSIndexPath *indexPath = [NSIndexPath indexPathForRow:(NSInteger)([[strongSelf jumps] count] - 1) inSection:0];
+      NSIndexPath *indexPath = [NSIndexPath indexPathForRow:(NSInteger)([[strongSelf jumps] count] - 1)
+                                                  inSection:kKayokoSectionSelectedActions];
       [[strongSelf tableView] insertRowsAtIndexPaths:@[ indexPath ] withRowAnimation:UITableViewRowAnimationAutomatic];
       [[strongSelf tableView] scrollToRowAtIndexPath:indexPath
                                     atScrollPosition:UITableViewScrollPositionMiddle
@@ -283,28 +248,23 @@ static CGFloat const kKayokoCustomJumpPlaceholderMinimumHeight = 96.0;
     [self presentViewController:navigationController animated:YES completion:nil];
 }
 
+#pragma mark - Editing
+
 - (BOOL)deleteJumpAtIndexPath:(NSIndexPath *)indexPath {
-    NSArray<KayokoCustomJump *> *displayedJumps = [self displayedJumps];
-    NSUInteger displayedIndex = (NSUInteger)[indexPath row];
-    if (displayedIndex >= [displayedJumps count]) {
+    if ([indexPath section] != kKayokoSectionSelectedActions || (NSUInteger)[indexPath row] >= [[self jumps] count]) {
         return NO;
     }
 
-    KayokoCustomJump *deletedJump = displayedJumps[displayedIndex];
-    NSUInteger actualIndex = [self indexOfJumpWithUUID:[deletedJump uuid] inJumps:[self jumps]];
-    if (actualIndex == NSNotFound) {
-        return NO;
-    }
-
+    NSUInteger index = (NSUInteger)[indexPath row];
+    KayokoCustomJump *deletedJump = [self jumps][index];
     NSMutableArray<KayokoCustomJump *> *updatedJumps = [[self jumps] mutableCopy];
-    [updatedJumps removeObjectAtIndex:actualIndex];
+    [updatedJumps removeObjectAtIndex:index];
     if (![self saveJumps:updatedJumps]) {
         return NO;
     }
 
-    [[self jumps] removeObjectAtIndex:actualIndex];
+    [[self jumps] removeObjectAtIndex:index];
     [[self selectedJumpUUIDs] removeObject:[deletedJump uuid]];
-    [self refreshFilteredJumps];
     [self updatePlaceholderVisibility];
     [[self tableView] deleteRowsAtIndexPaths:@[ indexPath ] withRowAnimation:UITableViewRowAnimationAutomatic];
     [self updateToolbarItems];
@@ -312,15 +272,14 @@ static CGFloat const kKayokoCustomJumpPlaceholderMinimumHeight = 96.0;
 }
 
 - (void)toggleSelectAll {
-    NSArray<KayokoCustomJump *> *displayedJumps = [self displayedJumps];
-    if ([displayedJumps count] == 0) {
+    if ([[self jumps] count] == 0) {
         return;
     }
 
-    BOOL shouldDeselect = [self allDisplayedJumpsSelected];
-    for (NSUInteger index = 0; index < [displayedJumps count]; index++) {
-        KayokoCustomJump *jump = displayedJumps[index];
-        NSIndexPath *indexPath = [NSIndexPath indexPathForRow:index inSection:0];
+    BOOL shouldDeselect = [self allJumpsSelected];
+    for (NSUInteger index = 0; index < [[self jumps] count]; index++) {
+        KayokoCustomJump *jump = [self jumps][index];
+        NSIndexPath *indexPath = [NSIndexPath indexPathForRow:(NSInteger)index inSection:kKayokoSectionSelectedActions];
         if (shouldDeselect) {
             [[self selectedJumpUUIDs] removeObject:[jump uuid]];
             [[self tableView] deselectRowAtIndexPath:indexPath animated:YES];
@@ -333,22 +292,21 @@ static CGFloat const kKayokoCustomJumpPlaceholderMinimumHeight = 96.0;
 }
 
 - (void)deleteSelectedJumps {
-    NSSet<NSString *> *selectedUUIDs = [self selectedDisplayedJumpUUIDs];
-    if ([selectedUUIDs count] == 0) {
+    if ([[self selectedJumpUUIDs] count] == 0) {
         return;
     }
 
-    NSArray<KayokoCustomJump *> *displayedJumpsBeforeDeletion = [[self displayedJumps] copy];
     NSMutableArray<NSIndexPath *> *deletedIndexPaths = [[NSMutableArray alloc] init];
-    for (NSUInteger index = 0; index < [displayedJumpsBeforeDeletion count]; index++) {
-        if ([selectedUUIDs containsObject:[displayedJumpsBeforeDeletion[index] uuid]]) {
-            [deletedIndexPaths addObject:[NSIndexPath indexPathForRow:index inSection:0]];
+    for (NSUInteger index = 0; index < [[self jumps] count]; index++) {
+        if ([[self selectedJumpUUIDs] containsObject:[[self jumps][index] uuid]]) {
+            [deletedIndexPaths addObject:[NSIndexPath indexPathForRow:(NSInteger)index
+                                                            inSection:kKayokoSectionSelectedActions]];
         }
     }
 
     NSMutableArray<KayokoCustomJump *> *updatedJumps = [[NSMutableArray alloc] init];
     for (KayokoCustomJump *jump in [self jumps]) {
-        if (![selectedUUIDs containsObject:[jump uuid]]) {
+        if (![[self selectedJumpUUIDs] containsObject:[jump uuid]]) {
             [updatedJumps addObject:jump];
         }
     }
@@ -356,9 +314,9 @@ static CGFloat const kKayokoCustomJumpPlaceholderMinimumHeight = 96.0;
         return;
     }
 
+    NSSet<NSString *> *deletedUUIDs = [[self selectedJumpUUIDs] copy];
     [self setJumps:updatedJumps];
-    [[self selectedJumpUUIDs] minusSet:selectedUUIDs];
-    [self refreshFilteredJumps];
+    [[self selectedJumpUUIDs] minusSet:deletedUUIDs];
     [self updatePlaceholderVisibility];
     if ([deletedIndexPaths count] > 0) {
         [[self tableView] deleteRowsAtIndexPaths:deletedIndexPaths withRowAnimation:UITableViewRowAnimationAutomatic];
@@ -381,13 +339,10 @@ static CGFloat const kKayokoCustomJumpPlaceholderMinimumHeight = 96.0;
 }
 
 - (void)updateJump:(KayokoCustomJump *)updatedJump {
-    NSUInteger index = [self indexOfJumpWithUUID:[updatedJump uuid] inJumps:[self jumps]];
+    NSUInteger index = [self indexOfJumpWithUUID:[updatedJump uuid]];
     if (index == NSNotFound) {
         return;
     }
-
-    NSArray<KayokoCustomJump *> *displayedJumpsBeforeUpdate = [[self displayedJumps] copy];
-    NSUInteger visibleIndexBeforeUpdate = [self indexOfJumpWithUUID:[updatedJump uuid] inJumps:displayedJumpsBeforeUpdate];
 
     NSMutableArray<KayokoCustomJump *> *updatedJumps = [[self jumps] mutableCopy];
     updatedJumps[index] = updatedJump;
@@ -396,40 +351,19 @@ static CGFloat const kKayokoCustomJumpPlaceholderMinimumHeight = 96.0;
     }
 
     [self setJumps:updatedJumps];
-    [self refreshFilteredJumps];
-    [self updatePlaceholderVisibility];
-
-    if (visibleIndexBeforeUpdate == NSNotFound) {
-        return;
-    }
-
-    NSUInteger visibleIndexAfterUpdate = [self indexOfJumpWithUUID:[updatedJump uuid] inJumps:[self displayedJumps]];
-    NSIndexPath *indexPath = [NSIndexPath indexPathForRow:visibleIndexBeforeUpdate inSection:0];
-    if (visibleIndexAfterUpdate == NSNotFound) {
-        if ((NSInteger)[indexPath row] < [[self tableView] numberOfRowsInSection:0]) {
-            [[self tableView] deleteRowsAtIndexPaths:@[ indexPath ] withRowAnimation:UITableViewRowAnimationAutomatic];
-        }
-        return;
-    }
-
-    NSIndexPath *updatedIndexPath = [NSIndexPath indexPathForRow:visibleIndexAfterUpdate inSection:0];
+    NSIndexPath *indexPath = [NSIndexPath indexPathForRow:(NSInteger)index inSection:kKayokoSectionSelectedActions];
     KayokoCustomJumpTableViewCell *cell =
-        (KayokoCustomJumpTableViewCell *)[[self tableView] cellForRowAtIndexPath:updatedIndexPath];
+        (KayokoCustomJumpTableViewCell *)[[self tableView] cellForRowAtIndexPath:indexPath];
     if ([cell isKindOfClass:[KayokoCustomJumpTableViewCell class]]) {
         [cell configureWithJump:updatedJump editing:[self isEditing]];
     }
 }
 
-- (NSArray<KayokoCustomJump *> *)displayedJumps {
-    return [self isFiltering] ? [self filteredJumps] : [self jumps];
-}
-
-- (BOOL)allDisplayedJumpsSelected {
-    NSArray<KayokoCustomJump *> *displayedJumps = [self displayedJumps];
-    if ([displayedJumps count] == 0) {
+- (BOOL)allJumpsSelected {
+    if ([[self jumps] count] == 0) {
         return NO;
     }
-    for (KayokoCustomJump *jump in displayedJumps) {
+    for (KayokoCustomJump *jump in [self jumps]) {
         if (![[self selectedJumpUUIDs] containsObject:[jump uuid]]) {
             return NO;
         }
@@ -437,45 +371,9 @@ static CGFloat const kKayokoCustomJumpPlaceholderMinimumHeight = 96.0;
     return YES;
 }
 
-- (NSSet<NSString *> *)selectedDisplayedJumpUUIDs {
-    NSMutableSet<NSString *> *selectedUUIDs = [[NSMutableSet alloc] init];
-    for (KayokoCustomJump *jump in [self displayedJumps]) {
-        if ([[self selectedJumpUUIDs] containsObject:[jump uuid]]) {
-            [selectedUUIDs addObject:[jump uuid]];
-        }
-    }
-    return [selectedUUIDs copy];
-}
-
-- (BOOL)isFiltering {
-    return [[self normalizedSearchText] length] > 0;
-}
-
-- (BOOL)isSearching {
-    return [self isSearchInterfaceActive] || [self isFiltering];
-}
-
-- (void)refreshFilteredJumps {
-    [[self filteredJumps] removeAllObjects];
-    NSString *searchText = [self normalizedSearchText];
-    if ([searchText length] == 0) {
-        return;
-    }
-
-    for (KayokoCustomJump *jump in [self jumps]) {
-        BOOL matchesTitle = [[jump title] rangeOfString:searchText options:NSCaseInsensitiveSearch | NSDiacriticInsensitiveSearch]
-                                                  .location != NSNotFound;
-        BOOL matchesLink = [[jump link] rangeOfString:searchText options:NSCaseInsensitiveSearch | NSDiacriticInsensitiveSearch]
-                                                 .location != NSNotFound;
-        if (matchesTitle || matchesLink) {
-            [[self filteredJumps] addObject:jump];
-        }
-    }
-}
-
-- (NSUInteger)indexOfJumpWithUUID:(NSString *)uuid inJumps:(NSArray<KayokoCustomJump *> *)jumps {
-    for (NSUInteger index = 0; index < [jumps count]; index++) {
-        if ([[jumps[index] uuid] isEqualToString:uuid]) {
+- (NSUInteger)indexOfJumpWithUUID:(NSString *)uuid {
+    for (NSUInteger index = 0; index < [[self jumps] count]; index++) {
+        if ([[[self jumps][index] uuid] isEqualToString:uuid]) {
             return index;
         }
     }
@@ -491,17 +389,9 @@ static CGFloat const kKayokoCustomJumpPlaceholderMinimumHeight = 96.0;
     return NO;
 }
 
-- (NSString *)normalizedSearchText {
-    NSString *text = [[[[self searchController] searchBar] text]
-        stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-    return text ?: @"";
-}
-
 - (void)updatePlaceholderVisibility {
-    BOOL noResults = [self isFiltering] && [[self jumps] count] > 0 && [[self filteredJumps] count] == 0;
-    BOOL shouldShow = [[self jumps] count] == 0 || noResults;
     UIView *footerView = [[self tableView] tableFooterView];
-    if (!shouldShow) {
+    if ([[self jumps] count] > 0) {
         if (footerView == [self placeholderView]) {
             [[self tableView] setTableFooterView:nil];
         }
@@ -511,9 +401,9 @@ static CGFloat const kKayokoCustomJumpPlaceholderMinimumHeight = 96.0;
     if (footerView != [self placeholderView]) {
         [[self tableView] setTableFooterView:[self placeholderView]];
     }
-    NSString *emptyKey = noResults ? @"No Search Results"
-                                   : ([[self class] isImageActionManagement] ? @"No Image Actions" : @"No Custom Jumps");
-    [[self placeholderView] setMessage:[self localizedStringForKey:emptyKey]];
+    [[self placeholderView] setMessage:[self localizedStringForKey:[[self class] isImageActionManagement]
+                                                                        ? @"No Image Actions"
+                                                                        : @"No Custom Jumps"]];
     [self updatePlaceholderLayout];
 }
 
@@ -524,8 +414,7 @@ static CGFloat const kKayokoCustomJumpPlaceholderMinimumHeight = 96.0;
 
     CGFloat availableHeight = CGRectGetHeight([[self tableView] bounds]) -
                               MAX([[self tableView] adjustedContentInset].top - [[self tableView] contentInset].top, 0.0) -
-                              MAX([[self tableView] adjustedContentInset].bottom - [[self tableView] contentInset].bottom, 0.0) -
-                              [self keyboardBottomInset];
+                              MAX([[self tableView] adjustedContentInset].bottom - [[self tableView] contentInset].bottom, 0.0);
     CGRect targetFrame = CGRectMake(0.0, 0.0, CGRectGetWidth([[self tableView] bounds]),
                                     floor(MAX(availableHeight, kKayokoCustomJumpPlaceholderMinimumHeight)));
     if (CGRectEqualToRect([[self placeholderView] frame], targetFrame)) {
@@ -555,30 +444,68 @@ static CGFloat const kKayokoCustomJumpPlaceholderMinimumHeight = 96.0;
 
 #pragma mark - UITableViewDataSource
 
+- (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView {
+    (void)tableView;
+    return 2;
+}
+
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
     (void)tableView;
-    (void)section;
-    return (NSInteger)[[self displayedJumps] count];
+    return section == kKayokoSectionChooseAction ? (NSInteger)[[self availableActionTypes] count]
+                                                 : (NSInteger)[[self jumps] count];
 }
 
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
+    if ([indexPath section] == kKayokoSectionChooseAction) {
+        UITableViewCell *cell = [tableView dequeueReusableCellWithIdentifier:kKayokoActionTypeCellReuseIdentifier
+                                                                forIndexPath:indexPath];
+        NSString *type = [self availableActionTypes][(NSUInteger)[indexPath row]];
+        [[cell imageView] setImage:[self iconForActionType:type]];
+        [[cell textLabel] setText:[self displayNameForActionType:type]];
+        [[cell textLabel] setFont:[UIFont systemFontOfSize:17.0]];
+        [[cell textLabel] setTextColor:[UIColor labelColor]];
+        [cell setAccessoryType:UITableViewCellAccessoryNone];
+        return cell;
+    }
+
     KayokoCustomJumpTableViewCell *cell = [tableView dequeueReusableCellWithIdentifier:kKayokoCustomJumpCellReuseIdentifier
                                                                             forIndexPath:indexPath];
-    [cell configureWithJump:[self displayedJumps][(NSUInteger)[indexPath row]] editing:[self isEditing]];
+    [cell configureWithJump:[self jumps][(NSUInteger)[indexPath row]] editing:[self isEditing]];
     return cell;
+}
+
+- (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section {
+    (void)tableView;
+    return [self localizedStringForKey:section == kKayokoSectionChooseAction ? @"Choose Action" : @"Selected"];
+}
+
+- (UIView *)tableView:(UITableView *)tableView viewForFooterInSection:(NSInteger)section {
+    (void)tableView;
+    if (section != kKayokoSectionSelectedActions) {
+        return nil;
+    }
+
+    UILabel *footerLabel = [[UILabel alloc] init];
+    [footerLabel setNumberOfLines:0];
+    [footerLabel setFont:[UIFont systemFontOfSize:13.0]];
+    [footerLabel setTextColor:[UIColor secondaryLabelColor]];
+    [footerLabel setText:[self localizedStringForKey:@"Selected Actions Footer"]];
+    return footerLabel;
 }
 
 - (BOOL)tableView:(UITableView *)tableView canEditRowAtIndexPath:(NSIndexPath *)indexPath {
     (void)tableView;
-    (void)indexPath;
-    return YES;
+    // The fixed add-action rows never participate in editing; only configured
+    // actions can be deleted or reordered.
+    return [indexPath section] == kKayokoSectionSelectedActions;
 }
 
 - (UITableViewCellEditingStyle)tableView:(UITableView *)tableView
            editingStyleForRowAtIndexPath:(NSIndexPath *)indexPath {
     (void)tableView;
-    (void)indexPath;
-    return [self isEditing] ? UITableViewCellEditingStyleNone : UITableViewCellEditingStyleDelete;
+    BOOL configuredAction = [indexPath section] == kKayokoSectionSelectedActions;
+    return (![self isEditing] && configuredAction) ? UITableViewCellEditingStyleDelete
+                                                   : UITableViewCellEditingStyleNone;
 }
 
 - (void)tableView:(UITableView *)tableView
@@ -592,14 +519,24 @@ static CGFloat const kKayokoCustomJumpPlaceholderMinimumHeight = 96.0;
 
 - (BOOL)tableView:(UITableView *)tableView canMoveRowAtIndexPath:(NSIndexPath *)indexPath {
     (void)tableView;
-    (void)indexPath;
-    return [self isEditing] && ![self isSearching];
+    return [self isEditing] && [indexPath section] == kKayokoSectionSelectedActions;
+}
+
+- (NSIndexPath *)tableView:(UITableView *)tableView
+    targetIndexPathForMoveFromRowAtIndexPath:(NSIndexPath *)sourceIndexPath
+                           toProposedIndexPath:(NSIndexPath *)proposedIndexPath {
+    (void)tableView;
+    if ([proposedIndexPath section] == kKayokoSectionSelectedActions) {
+        return proposedIndexPath;
+    }
+    return [NSIndexPath indexPathForRow:(NSInteger)([[self jumps] count] - 1)
+                              inSection:kKayokoSectionSelectedActions];
 }
 
 - (void)tableView:(UITableView *)tableView
     moveRowAtIndexPath:(NSIndexPath *)sourceIndexPath
            toIndexPath:(NSIndexPath *)destinationIndexPath {
-    if ([self isSearching] || [sourceIndexPath row] == [destinationIndexPath row]) {
+    if ([sourceIndexPath row] == [destinationIndexPath row]) {
         return;
     }
 
@@ -623,34 +560,40 @@ static CGFloat const kKayokoCustomJumpPlaceholderMinimumHeight = 96.0;
 #pragma mark - UITableViewDelegate
 
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
-    KayokoCustomJump *jump = [self displayedJumps][(NSUInteger)[indexPath row]];
+    if ([indexPath section] == kKayokoSectionChooseAction) {
+        if (![self isEditing]) {
+            [tableView deselectRowAtIndexPath:indexPath animated:YES];
+            [self addJumpWithType:[self availableActionTypes][(NSUInteger)[indexPath row]]];
+        }
+        return;
+    }
+
     if ([self isEditing]) {
-        [[self selectedJumpUUIDs] addObject:[jump uuid]];
+        [[self selectedJumpUUIDs] addObject:[[self jumps][(NSUInteger)[indexPath row]] uuid]];
         [self updateToolbarItems];
         return;
     }
 
     [tableView deselectRowAtIndexPath:indexPath animated:YES];
-    [self presentEditorForJump:jump];
+    [self presentEditorForJump:[self jumps][(NSUInteger)[indexPath row]]];
 }
 
 - (void)tableView:(UITableView *)tableView didDeselectRowAtIndexPath:(NSIndexPath *)indexPath {
-    if (![self isEditing] || (NSUInteger)[indexPath row] >= [[self displayedJumps] count]) {
+    if (![self isEditing] || [indexPath section] != kKayokoSectionSelectedActions ||
+        (NSUInteger)[indexPath row] >= [[self jumps] count]) {
         return;
     }
-    KayokoCustomJump *jump = [self displayedJumps][(NSUInteger)[indexPath row]];
-    [[self selectedJumpUUIDs] removeObject:[jump uuid]];
+    [[self selectedJumpUUIDs] removeObject:[[self jumps][(NSUInteger)[indexPath row]] uuid]];
     [self updateToolbarItems];
 }
 
 - (BOOL)tableView:(UITableView *)tableView shouldBeginMultipleSelectionInteractionAtIndexPath:(NSIndexPath *)indexPath {
     (void)tableView;
-    return (NSUInteger)[indexPath row] < [[self displayedJumps] count];
+    return [indexPath section] == kKayokoSectionSelectedActions;
 }
 
 - (void)tableView:(UITableView *)tableView didBeginMultipleSelectionInteractionAtIndexPath:(NSIndexPath *)indexPath {
     (void)tableView;
-    (void)indexPath;
     if (![self isEditing]) {
         [self setEditing:YES animated:YES];
     }
@@ -659,7 +602,7 @@ static CGFloat const kKayokoCustomJumpPlaceholderMinimumHeight = 96.0;
 - (UISwipeActionsConfiguration *)tableView:(UITableView *)tableView
     trailingSwipeActionsConfigurationForRowAtIndexPath:(NSIndexPath *)indexPath {
     (void)tableView;
-    if ([self isEditing]) {
+    if ([self isEditing] || [indexPath section] != kKayokoSectionSelectedActions) {
         return nil;
     }
     UIContextualAction *deleteAction =
@@ -673,68 +616,6 @@ static CGFloat const kKayokoCustomJumpPlaceholderMinimumHeight = 96.0;
                                               }];
     [deleteAction setImage:[UIImage systemImageNamed:@"trash.fill"]];
     return [UISwipeActionsConfiguration configurationWithActions:@[ deleteAction ]];
-}
-
-#pragma mark - Search
-
-- (void)updateSearchResultsForSearchController:(UISearchController *)searchController {
-    (void)searchController;
-    [self refreshFilteredJumps];
-    [[self tableView] reloadData];
-    [self updatePlaceholderVisibility];
-    [self syncDisplayedSelectionState];
-    [self updateToolbarItems];
-}
-
-- (void)willPresentSearchController:(UISearchController *)searchController {
-    (void)searchController;
-    BOOL wasSearching = [self isSearching];
-    [self setSearchInterfaceActive:YES];
-    [self reloadTableForSearchStateChangeFromSearching:wasSearching];
-    [self updatePlaceholderVisibility];
-    [self updateToolbarItems];
-}
-
-- (void)didDismissSearchController:(UISearchController *)searchController {
-    (void)searchController;
-    BOOL wasSearching = [self isSearching];
-    [self setSearchInterfaceActive:NO];
-    [self reloadTableForSearchStateChangeFromSearching:wasSearching];
-    [self updatePlaceholderVisibility];
-    [self updateToolbarItems];
-}
-
-- (void)reloadTableForSearchStateChangeFromSearching:(BOOL)wasSearching {
-    if (![self isEditing] || wasSearching == [self isSearching]) {
-        return;
-    }
-
-    [[self tableView] reloadData];
-    [self syncDisplayedSelectionState];
-}
-
-- (void)syncDisplayedSelectionState {
-    if (![self isEditing]) {
-        return;
-    }
-
-    NSArray<KayokoCustomJump *> *displayedJumps = [self displayedJumps];
-    NSSet<NSIndexPath *> *selectedIndexPaths =
-        [NSSet setWithArray:[[self tableView] indexPathsForSelectedRows] ?: @[]];
-    for (NSUInteger index = 0; index < [displayedJumps count]; index++) {
-        NSIndexPath *indexPath = [NSIndexPath indexPathForRow:(NSInteger)index inSection:0];
-        BOOL shouldSelect = [[self selectedJumpUUIDs] containsObject:[displayedJumps[index] uuid]];
-        BOOL isSelected = [selectedIndexPaths containsObject:indexPath];
-        if (shouldSelect == isSelected) {
-            continue;
-        }
-
-        if (shouldSelect) {
-            [[self tableView] selectRowAtIndexPath:indexPath animated:NO scrollPosition:UITableViewScrollPositionNone];
-        } else {
-            [[self tableView] deselectRowAtIndexPath:indexPath animated:NO];
-        }
-    }
 }
 
 @end
