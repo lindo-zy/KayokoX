@@ -188,6 +188,9 @@ static CGFloat const kKayokoFloatingPreviewVerticalEdgeInset = 12.0;
 // The countdown ring orbits just outside the bubble's rim.
 static CGFloat const kKayokoCountdownRingGap = 3.0;
 static CGFloat const kKayokoCountdownRingStrokeWidth = 3.0;
+// Extra horizontal travel past the rim + ring so the hide slide fully clears
+// the screen edge (including the ring glow) before the window is hidden.
+static CGFloat const kKayokoFloatingPreviewExitOvershoot = 8.0;
 
 - (void)loadView {
     [self setView:[[KayokoFloatingPreviewView alloc] initWithFrame:CGRectZero]];
@@ -977,10 +980,21 @@ NS_ASSUME_NONNULL_END
         return;
     }
 
-    [UIView animateWithDuration:0.18
+    // Slide the bubble out through its nearest screen edge instead of shrinking
+    // in place; the instant alpha drop in hide() lands once it is off-screen.
+    UIView *floatingView = [viewController view];
+    CGFloat exitDistance = MAX([viewController bubbleDiameter], 1.0) +
+                           kKayokoCountdownRingGap + kKayokoCountdownRingStrokeWidth +
+                           kKayokoFloatingPreviewExitOvershoot;
+    BOOL exitRight = [[viewController button] center].x >= CGRectGetMidX([floatingView bounds]);
+    CGAffineTransform exitTransform =
+        CGAffineTransformMakeTranslation(exitRight ? exitDistance : -exitDistance, 0.0);
+
+    [UIView animateWithDuration:0.22
+        delay:0.0
+        options:UIViewAnimationOptionCurveEaseIn
         animations:^{
-          [[viewController view] setAlpha:0.0];
-          [[viewController view] setTransform:CGAffineTransformMakeScale(0.82, 0.82)];
+          [floatingView setTransform:exitTransform];
         }
         completion:^(__unused BOOL finished) {
           if (self.floatingPreviewDisplayToken == displayToken) {
