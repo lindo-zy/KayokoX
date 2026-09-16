@@ -8,6 +8,7 @@
 #import "KayokoCore.h"
 #import "KayokoCoreRuntime.h"
 #import "KayokoNotificationKeys.h"
+#import "KayokoShortcutSnapshotProvider.h"
 #import "KayokoSpringBoardHooks.h"
 
 #import <CoreFoundation/CoreFoundation.h>
@@ -257,6 +258,9 @@ static void kayokoCorePasteTipPreferencesReloadCallback(CFNotificationCenterRef 
 + (void)installForSpringBoard {
     KayokoCoreRuntime *runtime = [KayokoCoreRuntime sharedRuntime];
     [runtime loadPreferences];
+    // Registered regardless of the enabled state: the preferences shortcut
+    // picker needs the catalogue even while the tweak is switched off.
+    [KayokoShortcutSnapshotProvider installObserver];
     [self addDarwinObserverForName:(__bridge CFStringRef)kKayokoNotificationKeyCoreCheckpointHistory
                           callback:kayokoCoreCheckpointHistoryCallback];
     [self addDarwinObserverForName:(__bridge CFStringRef)kKayokoNotificationKeyCorePrepareMaintenance

@@ -14,6 +14,9 @@ typedef NS_ENUM(NSUInteger, KayokoQuickActionKind) {
 
 @interface KayokoQuickAction : NSObject
 
+// Loads the custom actions persisted by the Preferences bundle. Every type
+// surfaces in the quick-action panels: legacy/urlscheme entries open a URL,
+// openapp launches its app, shortcut activates the app's long-press item.
 + (NSArray<NSDictionary<NSString *, id> *> *)actionsForKind:(KayokoQuickActionKind)kind;
 + (void)openAction:(NSDictionary<NSString *, id> *)action
              input:(nullable NSString *)input

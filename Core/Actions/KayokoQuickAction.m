@@ -5,6 +5,8 @@
 
 #import "KayokoQuickAction.h"
 
+#import "KayokoShortcutSnapshotProvider.h"
+
 #import <UIKit/UIKit.h>
 #import <objc/runtime.h>
 #import <roothide.h>
@@ -13,6 +15,12 @@ static NSString *const kKayokoTextActionStorePath = @"/var/mobile/Library/com.li
 static NSString *const kKayokoImageActionStorePath = @"/var/mobile/Library/com.lindo.kayoko/image-actions-v1.plist";
 
 static NSString *const kKayokoQuickActionDefaultIconName = @"link";
+
+static NSString *const kKayokoCustomActionTypeKey = @"type";
+static NSString *const kKayokoCustomActionShortcutTypeKey = @"shortcuttype";
+static NSString *const kKayokoCustomActionTypeURLScheme = @"urlscheme";
+static NSString *const kKayokoCustomActionTypeOpenApp = @"openapp";
+static NSString *const kKayokoCustomActionTypeShortcut = @"shortcut";
 
 // Declared locally: FBSSystemService, FBSOpenApplicationService, and LSApplicationWorkspace are not in the SDK.
 // The FBSSystemService signature matches the entry LLVM debugserver uses to launch apps on device.
@@ -62,14 +70,40 @@ static NSString *const kKayokoQuickActionDefaultIconName = @"link";
         NSString *title = item[@"title"];
         NSString *link = item[@"link"];
         NSString *icon = item[@"icon"];
+        NSString *type = item[kKayokoCustomActionTypeKey];
+        NSString *shortcutType = item[kKayokoCustomActionShortcutTypeKey];
         if (![title isKindOfClass:[NSString class]] || ![link isKindOfClass:[NSString class]] ||
             [title length] == 0) {
             continue;
         }
+        BOOL isTyped =
+            [type isKindOfClass:[NSString class]] && [type length] > 0 && ![type isEqualToString:kKayokoCustomActionTypeURLScheme];
+        if (isTyped) {
+            // 打开应用 / 快捷方式 dispatch by bundle identifier, so an entry
+            // without one has nothing to run; 快捷方式 additionally needs the
+            // app-defined item type.
+            if ([link length] == 0) {
+                continue;
+            }
+            if ([type isEqualToString:kKayokoCustomActionTypeShortcut] &&
+                (![shortcutType isKindOfClass:[NSString class]] || [shortcutType length] == 0)) {
+                continue;
+            }
+        }
         if (![icon isKindOfClass:[NSString class]] || [icon length] == 0) {
             icon = kKayokoQuickActionDefaultIconName;
         }
-        [actions addObject:@{ @"title" : title, @"link" : link, @"icon" : icon }];
+        NSMutableDictionary<NSString *, id> *action = [[NSMutableDictionary alloc] init];
+        action[@"title"] = title;
+        action[@"link"] = link;
+        action[@"icon"] = icon;
+        if ([type isKindOfClass:[NSString class]] && [type length] > 0) {
+            action[kKayokoCustomActionTypeKey] = type;
+        }
+        if ([shortcutType isKindOfClass:[NSString class]] && [shortcutType length] > 0) {
+            action[kKayokoCustomActionShortcutTypeKey] = shortcutType;
+        }
+        [actions addObject:action];
     }
     return [actions copy];
 }
@@ -77,6 +111,35 @@ static NSString *const kKayokoQuickActionDefaultIconName = @"link";
 + (void)openAction:(NSDictionary<NSString *, id> *)action
              input:(NSString *)input
  completionHandler:(void (^)(BOOL success))completionHandler {
+    NSString *type = [action isKindOfClass:[NSDictionary class]] ? action[kKayokoCustomActionTypeKey] : nil;
+
+    if ([type isKindOfClass:[NSString class]] && [type isEqualToString:kKayokoCustomActionTypeOpenApp]) {
+        // link carries the target bundle identifier directly.
+        NSString *bundleIdentifier = [action isKindOfClass:[NSDictionary class]] ? action[@"link"] : nil;
+        if ([self looksLikeBundleIdentifier:bundleIdentifier]) {
+            [self openApplicationWithBundleIdentifier:bundleIdentifier completionHandler:completionHandler];
+        } else {
+            [self finishOpening:completionHandler success:NO];
+        }
+        return;
+    }
+
+    if ([type isKindOfClass:[NSString class]] && [type isEqualToString:kKayokoCustomActionTypeShortcut]) {
+        // link carries the owning app's bundle identifier; the shortcut item
+        // type rides the shortcuttype key.
+        NSString *bundleIdentifier = [action isKindOfClass:[NSDictionary class]] ? action[@"link"] : nil;
+        NSString *shortcutType = [action isKindOfClass:[NSDictionary class]] ? action[@"shortcuttype"] : nil;
+        if ([self looksLikeBundleIdentifier:bundleIdentifier] && [shortcutType isKindOfClass:[NSString class]] &&
+            [shortcutType length] > 0) {
+            [self finishOpening:completionHandler success:YES];
+            [KayokoShortcutSnapshotProvider activateShortcutWithType:shortcutType
+                                                forBundleIdentifier:bundleIdentifier];
+        } else {
+            [self finishOpening:completionHandler success:NO];
+        }
+        return;
+    }
+
     NSString *link = [self resolvedLinkForAction:action input:input];
     if ([link length] == 0) {
         [self finishOpening:completionHandler success:NO];

@@ -227,18 +227,60 @@ static CGFloat const kKayokoCustomJumpPlaceholderMinimumHeight = 96.0;
         [[self tableView] reloadData];
     }
 
-    KayokoCustomJump *jump = [KayokoCustomJump jumpWithTitle:[self localizedStringForKey:@"Untitled"] link:@""];
-    NSMutableArray<KayokoCustomJump *> *updatedJumps = [[self jumps] mutableCopy];
-    [updatedJumps addObject:jump];
-    if (![self saveJumps:updatedJumps]) {
-        return;
+    // 添加 flow: the type is chosen first (URL Scheme, 打开应用, 快捷方式);
+    // nothing touches the store here — the action joins the list only when
+    // the editor's 完成 reports the finished entry, so backing out of the
+    // editor never leaves a half-configured row behind.
+    UIAlertController *chooser = [UIAlertController alertControllerWithTitle:[self localizedStringForKey:@"Choose Action Type"]
+                                                                      message:nil
+                                                               preferredStyle:UIAlertControllerStyleAlert];
+    for (NSString *type in @[ kKayokoCustomJumpTypeURLScheme, kKayokoCustomJumpTypeOpenApp, kKayokoCustomJumpTypeShortcut ]) {
+        NSString *displayName = [type isEqualToString:kKayokoCustomJumpTypeURLScheme] ? [self localizedStringForKey:@"URL Scheme"]
+            : [type isEqualToString:kKayokoCustomJumpTypeOpenApp]   ? [self localizedStringForKey:@"Open App"]
+                                                                    : [self localizedStringForKey:@"Shortcut"];
+        [chooser addAction:[UIAlertAction actionWithTitle:displayName
+                                                    style:UIAlertActionStyleDefault
+                                                  handler:^(__unused UIAlertAction *action) {
+                                                    [self presentEditorForNewJumpWithType:type];
+                                                  }]];
     }
+    [chooser addAction:[UIAlertAction actionWithTitle:[self localizedStringForKey:@"Cancel"]
+                                                style:UIAlertActionStyleCancel
+                                              handler:nil]];
+    [self presentViewController:chooser animated:YES completion:nil];
+}
 
-    [[self jumps] addObject:jump];
-    [self updatePlaceholderVisibility];
-    NSIndexPath *indexPath = [NSIndexPath indexPathForRow:(NSInteger)[[self jumps] count] - 1 inSection:0];
-    [[self tableView] insertRowsAtIndexPaths:@[ indexPath ] withRowAnimation:UITableViewRowAnimationAutomatic];
-    [[self tableView] scrollToRowAtIndexPath:indexPath atScrollPosition:UITableViewScrollPositionMiddle animated:YES];
+- (void)presentEditorForNewJumpWithType:(NSString *)type {
+    KayokoCustomJump *jump = [[KayokoCustomJump alloc] initWithUUID:[[NSUUID UUID] UUIDString]
+                                                              title:@""
+                                                               link:@""
+                                                               icon:nil
+                                                               type:type
+                                                       shortcutType:nil];
+    KayokoCustomJumpEditorViewController *editor =
+        [[KayokoCustomJumpEditorViewController alloc] initWithJump:jump
+                                                 localizationBundle:[self localizationBundle]
+                                                     isImageAction:[[self class] isImageActionManagement]];
+    __weak typeof(self) weakSelf = self;
+    [editor setCompletionHandler:^(KayokoCustomJump *updatedJump) {
+      __strong typeof(weakSelf) strongSelf = weakSelf;
+      if (!strongSelf) return;
+      NSMutableArray<KayokoCustomJump *> *updatedJumps = [[strongSelf jumps] mutableCopy];
+      [updatedJumps addObject:updatedJump];
+      if (![strongSelf saveJumps:updatedJumps]) {
+          return;
+      }
+      [[strongSelf jumps] addObject:updatedJump];
+      [strongSelf updatePlaceholderVisibility];
+      NSIndexPath *indexPath = [NSIndexPath indexPathForRow:(NSInteger)([[strongSelf jumps] count] - 1) inSection:0];
+      [[strongSelf tableView] insertRowsAtIndexPaths:@[ indexPath ] withRowAnimation:UITableViewRowAnimationAutomatic];
+      [[strongSelf tableView] scrollToRowAtIndexPath:indexPath
+                                    atScrollPosition:UITableViewScrollPositionMiddle
+                                           animated:YES];
+    }];
+    UINavigationController *navigationController = [[UINavigationController alloc] initWithRootViewController:editor];
+    [navigationController setModalPresentationStyle:UIModalPresentationPageSheet];
+    [self presentViewController:navigationController animated:YES completion:nil];
 }
 
 - (BOOL)deleteJumpAtIndexPath:(NSIndexPath *)indexPath {

@@ -54,7 +54,12 @@
 
 - (void)configureWithJump:(KayokoCustomJump *)jump editing:(BOOL)editing {
     [[self titleLabel] setText:[jump title]];
-    [[self linkLabel] setText:[jump link]];
+    // Shortcut payloads dispatch by the app-defined item type, so that is
+    // the identifier worth showing; every other type shows its link.
+    NSString *link = [[jump type] isEqualToString:kKayokoCustomJumpTypeShortcut] && [[jump shortcutType] length] > 0
+        ? [jump shortcutType]
+        : [jump link];
+    [[self linkLabel] setText:link];
     [self setAccessoryType:editing ? UITableViewCellAccessoryNone : UITableViewCellAccessoryDisclosureIndicator];
 }
 
