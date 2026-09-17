@@ -17,6 +17,68 @@
 #import "KayokoTableViewCellContent.h"
 #import "KayokoTableViewCellContentProvider.h"
 
+#import <objc/runtime.h>
+
+static CGFloat const kKayokoGalleryMinimumRowHeight = 112;
+static NSUInteger const kKayokoGalleryColumnCount = 2;
+static const void *kKayokoGalleryItemDictionaryKey = &kKayokoGalleryItemDictionaryKey;
+
+@interface KayokoGalleryRowCell : UITableViewCell
+@property(nonatomic, copy) NSArray<KayokoTableViewCell *> *itemCells;
+- (void)setGalleryItemCells:(NSArray<KayokoTableViewCell *> *)itemCells;
+- (nullable KayokoTableViewCell *)itemCellAtColumn:(NSUInteger)column;
+@end
+
+@implementation KayokoGalleryRowCell
+
+- (instancetype)initWithReuseIdentifier:(NSString *)reuseIdentifier {
+    self = [super initWithStyle:UITableViewCellStyleDefault reuseIdentifier:reuseIdentifier];
+    if (self) {
+        [self setBackgroundColor:[UIColor clearColor]];
+        [self setSelectionStyle:UITableViewCellSelectionStyleNone];
+    }
+    return self;
+}
+
+- (void)setGalleryItemCells:(NSArray<KayokoTableViewCell *> *)itemCells {
+    for (UIView *view in [self itemCells]) {
+        [view removeFromSuperview];
+    }
+    _itemCells = [itemCells copy] ?: @[];
+
+    UIView *previousView = nil;
+    for (KayokoTableViewCell *itemCell in _itemCells) {
+        [[self contentView] addSubview:itemCell];
+        [itemCell setTranslatesAutoresizingMaskIntoConstraints:NO];
+        NSMutableArray<NSLayoutConstraint *> *constraints = [NSMutableArray arrayWithArray:@[
+            [[itemCell topAnchor] constraintEqualToAnchor:[[self contentView] topAnchor] constant:5],
+            [[itemCell bottomAnchor] constraintEqualToAnchor:[[self contentView] bottomAnchor] constant:-5]
+        ]];
+        if (previousView) {
+            [constraints addObject:[[itemCell leadingAnchor] constraintEqualToAnchor:[previousView trailingAnchor]
+                                                                            constant:8]];
+            [constraints addObject:[[itemCell widthAnchor] constraintEqualToAnchor:[previousView widthAnchor]]];
+        } else {
+            [constraints addObject:[[itemCell leadingAnchor] constraintEqualToAnchor:[[self contentView] leadingAnchor]
+                                                                            constant:8]];
+            [constraints addObject:[[itemCell widthAnchor] constraintEqualToAnchor:[[self contentView] widthAnchor]
+                                                                      multiplier:0.5
+                                                                        constant:-12]];
+        }
+        [NSLayoutConstraint activateConstraints:constraints];
+        previousView = itemCell;
+    }
+    if ([[self itemCells] count] == kKayokoGalleryColumnCount) {
+        [[previousView trailingAnchor] constraintEqualToAnchor:[[self contentView] trailingAnchor] constant:-8].active = YES;
+    }
+}
+
+- (nullable KayokoTableViewCell *)itemCellAtColumn:(NSUInteger)column {
+    return column < [[self itemCells] count] ? [self itemCells][column] : nil;
+}
+
+@end
+
 NS_ASSUME_NONNULL_BEGIN
 
 @interface KayokoHistoryListViewController () <UITableViewDelegate, UITableViewDataSource>
@@ -38,7 +100,11 @@ NS_ASSUME_NONNULL_BEGIN
 @property(nonatomic, copy, nullable) NSString *presentationHiddenItemContent;
 
 - (KayokoTableViewCell *)newCellForItem:(KayokoPasteboardItem *)item addsPreviewGesture:(BOOL)addsPreviewGesture;
-- (void)loadThumbnailForItem:(KayokoPasteboardItem *)item intoCell:(KayokoTableViewCell *)cell;
+- (KayokoTableViewCell *)newGalleryCellForItem:(KayokoPasteboardItem *)item
+                                     dictionary:(NSDictionary<NSString *, id> *)dictionary;
+- (void)loadThumbnailForItem:(KayokoPasteboardItem *)item
+                    intoCell:(KayokoTableViewCell *)cell
+                  targetSize:(CGSize)targetSize;
 - (void)refreshVisibleItemDetails;
 - (nullable UIContextualAction *)snapperActionForItem:(KayokoPasteboardItem *)item;
 @end
@@ -124,6 +190,22 @@ NS_ASSUME_NONNULL_END
     return [[self tableView] itemDetailsMode];
 }
 
+- (void)setGalleryModeEnabled:(BOOL)galleryModeEnabled {
+    if (_galleryModeEnabled == galleryModeEnabled) {
+        return;
+    }
+    _galleryModeEnabled = galleryModeEnabled;
+    KayokoHistoryListView *tableView = [self tableView];
+    [tableView setSeparatorStyle:galleryModeEnabled ? UITableViewCellSeparatorStyleNone
+                                               : UITableViewCellSeparatorStyleSingleLine];
+    if (galleryModeEnabled) {
+        [tableView setRowHeight:MAX(kKayokoGalleryMinimumRowHeight, floor(CGRectGetHeight([tableView bounds]) / 3.0))];
+    } else {
+        [tableView setPreviewLineCount:[tableView previewLineCount]];
+    }
+    [self reloadTableView];
+}
+
 - (void)refreshSearchPlaceholder {
     BOOL showsNoSearchResults = [self hasActiveSearch] && ![self isBrowsingSearchTokens] && [[self items] count] > 0 &&
                                 [[self displayedItems] count] == 0;
@@ -136,6 +218,13 @@ NS_ASSUME_NONNULL_END
 }
 
 - (void)refreshVisibleItemDetails {
+    if ([self isGalleryModeEnabled]) {
+        NSArray<NSIndexPath *> *visibleRows = [[self tableView] indexPathsForVisibleRows];
+        if ([visibleRows count] > 0) {
+            [[self tableView] reloadRowsAtIndexPaths:visibleRows withRowAnimation:UITableViewRowAnimationNone];
+        }
+        return;
+    }
     for (NSIndexPath *indexPath in [[self tableView] indexPathsForVisibleRows]) {
         KayokoPasteboardItem *item =
             [KayokoPasteboardItem itemFromDictionary:[self itemDictionaryAtIndexPath:indexPath]];
@@ -264,14 +353,15 @@ NS_ASSUME_NONNULL_END
      animatingTopInsertions:(BOOL)animatingTopInsertions {
     NSArray<NSDictionary<NSString *, id> *> *oldItems = [self items] ?: @[];
     NSArray<NSDictionary<NSString *, id> *> *newItems = items ?: @[];
-    if ([oldItems isEqualToArray:newItems] && [[self tableView] numberOfRowsInSection:0] == [oldItems count]) {
+    NSUInteger expectedOldRowCount = [self isGalleryModeEnabled] ? ([oldItems count] + 1) / 2 : [oldItems count];
+    if ([oldItems isEqualToArray:newItems] && [[self tableView] numberOfRowsInSection:0] == expectedOldRowCount) {
         [self refreshVisibleItemDetails];
         return;
     }
 
     NSUInteger insertedCount = 0;
     NSUInteger removedCount = 0;
-    BOOL canAnimateTopInsertion = ![self hasActiveSearch] && animatingTopInsertions &&
+    BOOL canAnimateTopInsertion = ![self isGalleryModeEnabled] && ![self hasActiveSearch] && animatingTopInsertions &&
                                   [[self tableView] numberOfRowsInSection:0] == [oldItems count] &&
                                   [self canUpdateFromItems:oldItems
                                                    toItems:newItems
@@ -391,6 +481,12 @@ NS_ASSUME_NONNULL_END
         [newItems removeLastObject];
     }
 
+    if ([self isGalleryModeEnabled]) {
+        [self setItems:newItems];
+        [self reloadTableView];
+        return;
+    }
+
     if ([oldItems isEqualToArray:newItems] &&
         [[self tableView] numberOfRowsInSection:0] == [[self displayedItems] count]) {
         [self refreshVisibleItemDetails];
@@ -486,6 +582,15 @@ NS_ASSUME_NONNULL_END
         return;
     }
 
+    if ([self isGalleryModeEnabled]) {
+        [[self dataStore] removeDisplayedItemAtIndex:[indexPath row]];
+        [self reloadTableView];
+        if (completion) {
+            completion(YES);
+        }
+        return;
+    }
+
     CGPoint contentOffsetBeforeRemoval = [[self tableView] contentOffset];
     BOOL restoresContentOffsetAfterRemoval =
         [self shouldRestoreContentOffsetAfterTopRowRemovalAtIndexPath:indexPath fromOffset:contentOffsetBeforeRemoval];
@@ -521,6 +626,18 @@ NS_ASSUME_NONNULL_END
     }
 
     NSDictionary<NSString *, id> *dictionary = [item dictionaryRepresentation];
+    if ([self isGalleryModeEnabled]) {
+        NSUInteger displayedIndex = NSNotFound;
+        [[self dataStore] updateNote:note
+                             tagUUID:tagUUID
+              forItemMatchingDictionary:dictionary
+                     displayedItemIndex:&displayedIndex];
+        [self reloadTableView];
+        if (completion) {
+            completion();
+        }
+        return;
+    }
     __block KayokoTableDataStoreDisplayedItemUpdate update = KayokoTableDataStoreDisplayedItemUpdateNotFound;
     __block NSUInteger displayedIndex = NSNotFound;
 
@@ -568,6 +685,17 @@ forItemMatchingDictionary:(NSDictionary<NSString *, id> *)dictionary
         }
         return;
     }
+    if ([self isGalleryModeEnabled]) {
+        NSUInteger displayedIndex = NSNotFound;
+        [[self dataStore] replaceContent:content
+              forItemMatchingDictionary:dictionary
+                     displayedItemIndex:&displayedIndex];
+        [self reloadTableView];
+        if (completion) {
+            completion();
+        }
+        return;
+    }
     __block KayokoTableDataStoreDisplayedItemUpdate update = KayokoTableDataStoreDisplayedItemUpdateNotFound;
     __block NSUInteger displayedIndex = NSNotFound;
 
@@ -607,8 +735,13 @@ forItemMatchingDictionary:(NSDictionary<NSString *, id> *)dictionary
     if (displayedIndex == NSNotFound) {
         return nil;
     }
-    return (KayokoTableViewCell *)[[self tableView] cellForRowAtIndexPath:[NSIndexPath indexPathForRow:displayedIndex
-                                                                                             inSection:0]];
+    if ([self isGalleryModeEnabled]) {
+        NSIndexPath *rowIndexPath = [NSIndexPath indexPathForRow:displayedIndex / kKayokoGalleryColumnCount inSection:0];
+        KayokoGalleryRowCell *rowCell = (KayokoGalleryRowCell *)[[self tableView] cellForRowAtIndexPath:rowIndexPath];
+        return [rowCell itemCellAtColumn:displayedIndex % kKayokoGalleryColumnCount];
+    }
+    return (KayokoTableViewCell *)[[self tableView]
+        cellForRowAtIndexPath:[NSIndexPath indexPathForRow:displayedIndex inSection:0]];
 }
 
 - (KayokoTableViewCell *)presentationCellForItem:(KayokoPasteboardItem *)item {
@@ -631,6 +764,18 @@ forItemMatchingDictionary:(NSDictionary<NSString *, id> *)dictionary
 
     KayokoHistoryListView *tableView = [self tableView];
     NSString *hiddenContent = [self presentationHiddenItemContent];
+    if ([self isGalleryModeEnabled]) {
+        for (NSIndexPath *rowIndexPath in [tableView indexPathsForVisibleRows]) {
+            KayokoGalleryRowCell *rowCell = (KayokoGalleryRowCell *)[tableView cellForRowAtIndexPath:rowIndexPath];
+            for (KayokoTableViewCell *itemCell in [rowCell itemCells]) {
+                NSDictionary *dictionary = objc_getAssociatedObject(itemCell, kKayokoGalleryItemDictionaryKey);
+                BOOL hidesCell = [hiddenContent length] > 0 &&
+                                 [dictionary[kKayokoItemKeyContent] isEqualToString:hiddenContent];
+                [itemCell setHidden:hidesCell];
+            }
+        }
+        return;
+    }
     for (NSIndexPath *indexPath in [tableView indexPathsForVisibleRows]) {
         NSDictionary<NSString *, id> *dictionary = [self itemDictionaryAtIndexPath:indexPath];
         BOOL hidesCell =
@@ -650,17 +795,18 @@ forItemMatchingDictionary:(NSDictionary<NSString *, id> *)dictionary
         return nil;
     }
 
-    NSIndexPath *indexPath = [NSIndexPath indexPathForRow:displayedIndex inSection:0];
+    NSUInteger tableRow = [self isGalleryModeEnabled] ? displayedIndex / kKayokoGalleryColumnCount : displayedIndex;
+    NSIndexPath *indexPath = [NSIndexPath indexPathForRow:tableRow inSection:0];
     KayokoHistoryListView *tableView = [self tableView];
     [tableView layoutIfNeeded];
-    KayokoTableViewCell *visibleCell = (KayokoTableViewCell *)[tableView cellForRowAtIndexPath:indexPath];
+    KayokoTableViewCell *visibleCell = [self visibleCellForItem:item];
     if (visibleCell) {
         return visibleCell;
     }
 
     [tableView scrollToRowAtIndexPath:indexPath atScrollPosition:UITableViewScrollPositionMiddle animated:NO];
     [tableView layoutIfNeeded];
-    return (KayokoTableViewCell *)[tableView cellForRowAtIndexPath:indexPath];
+    return [self visibleCellForItem:item];
 }
 
 #pragma mark - UITableViewDataSource
@@ -669,7 +815,9 @@ forItemMatchingDictionary:(NSDictionary<NSString *, id> *)dictionary
     if (tableView != [self tableView]) {
         return 0;
     }
-    return [[self displayedItems] count];
+    NSUInteger itemCount = [[self displayedItems] count];
+    return [self isGalleryModeEnabled] ? (itemCount + kKayokoGalleryColumnCount - 1) / kKayokoGalleryColumnCount
+                                       : itemCount;
 }
 
 - (KayokoTableViewCell *)newCellForItem:(KayokoPasteboardItem *)item addsPreviewGesture:(BOOL)addsPreviewGesture {
@@ -682,7 +830,7 @@ forItemMatchingDictionary:(NSDictionary<NSString *, id> *)dictionary
         [[KayokoTableViewCell alloc] initWithStyle:UITableViewCellStyleDefault
                                            content:content
                                    reuseIdentifier:[KayokoTableViewCell reuseIdentifierForContent:content]];
-    [self loadThumbnailForItem:item intoCell:cell];
+    [self loadThumbnailForItem:item intoCell:cell targetSize:[KayokoTableViewCell contentImageThumbnailSize]];
 
     if (addsPreviewGesture) {
         UILongPressGestureRecognizer *gesture =
@@ -693,7 +841,32 @@ forItemMatchingDictionary:(NSDictionary<NSString *, id> *)dictionary
     return cell;
 }
 
-- (void)loadThumbnailForItem:(KayokoPasteboardItem *)item intoCell:(KayokoTableViewCell *)cell {
+- (KayokoTableViewCell *)newGalleryCellForItem:(KayokoPasteboardItem *)item
+                                     dictionary:(NSDictionary<NSString *, id> *)dictionary {
+    KayokoTableViewCellContent *content = [[self cellContentProvider] cellContentForItem:item
+                                                                        previewLineCount:3
+                                                                         itemDetailsMode:[self itemDetailsMode]
+                                                                              searchText:[self searchText]];
+    KayokoTableViewCell *cell = [[KayokoTableViewCell alloc]
+        initWithGalleryContent:content
+               reuseIdentifier:[KayokoTableViewCell galleryReuseIdentifierForContent:content]];
+    objc_setAssociatedObject(cell, kKayokoGalleryItemDictionaryKey, dictionary, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    UITapGestureRecognizer *tapGesture =
+        [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(handleGalleryTapGestureRecognizer:)];
+    [cell addGestureRecognizer:tapGesture];
+    UILongPressGestureRecognizer *longPressGesture =
+        [[UILongPressGestureRecognizer alloc] initWithTarget:self action:@selector(handleLongPressGestureRecognizer:)];
+    [tapGesture requireGestureRecognizerToFail:longPressGesture];
+    [cell addGestureRecognizer:longPressGesture];
+    [self loadThumbnailForItem:item
+                      intoCell:cell
+                    targetSize:[KayokoTableViewCell galleryContentImageThumbnailSize]];
+    return cell;
+}
+
+- (void)loadThumbnailForItem:(KayokoPasteboardItem *)item
+                    intoCell:(KayokoTableViewCell *)cell
+                  targetSize:(CGSize)targetSize {
     NSString *imageName = [[item imageName] copy];
     if ([imageName length] == 0) {
         return;
@@ -701,13 +874,35 @@ forItemMatchingDictionary:(NSDictionary<NSString *, id> *)dictionary
 
     __weak KayokoTableViewCell *weakCell = cell;
     [[self cellContentProvider] loadThumbnailForItem:item
-                                          targetSize:[KayokoTableViewCell contentImageThumbnailSize]
+                                          targetSize:targetSize
                                           completion:^(UIImage *_Nullable image) {
                                             [weakCell setContentImage:image forImageName:imageName];
                                           }];
 }
 
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
+    if ([self isGalleryModeEnabled]) {
+        static NSString *const reuseIdentifier = @"KayokoGalleryRowCell";
+        KayokoGalleryRowCell *rowCell = [tableView dequeueReusableCellWithIdentifier:reuseIdentifier];
+        if (!rowCell) {
+            rowCell = [[KayokoGalleryRowCell alloc] initWithReuseIdentifier:reuseIdentifier];
+        }
+        NSMutableArray<KayokoTableViewCell *> *itemCells = [[NSMutableArray alloc] initWithCapacity:2];
+        NSUInteger firstItemIndex = [indexPath row] * kKayokoGalleryColumnCount;
+        for (NSUInteger column = 0; column < kKayokoGalleryColumnCount; column++) {
+            NSUInteger itemIndex = firstItemIndex + column;
+            if (itemIndex >= [[self displayedItems] count]) {
+                break;
+            }
+            NSDictionary<NSString *, id> *dictionary = [self displayedItems][itemIndex];
+            KayokoPasteboardItem *item = [KayokoPasteboardItem itemFromDictionary:dictionary];
+            KayokoTableViewCell *itemCell = [self newGalleryCellForItem:item dictionary:dictionary];
+            [itemCell setHidden:[[self presentationHiddenItemContent] isEqualToString:[item content]]];
+            [itemCells addObject:itemCell];
+        }
+        [rowCell setGalleryItemCells:itemCells];
+        return rowCell;
+    }
     NSDictionary<NSString *, id> *dictionary = [self itemDictionaryAtIndexPath:indexPath];
     KayokoPasteboardItem *item = [KayokoPasteboardItem itemFromDictionary:dictionary];
     KayokoTableViewCellContent *content = [[self cellContentProvider] cellContentForItem:item
@@ -727,7 +922,7 @@ forItemMatchingDictionary:(NSDictionary<NSString *, id> *)dictionary
                                                           action:@selector(handleLongPressGestureRecognizer:)];
         [cell addGestureRecognizer:gesture];
     }
-    [self loadThumbnailForItem:item intoCell:cell];
+    [self loadThumbnailForItem:item intoCell:cell targetSize:[KayokoTableViewCell contentImageThumbnailSize]];
     [cell setHidden:[[self presentationHiddenItemContent] isEqualToString:[item content]]];
     return cell;
 }
@@ -738,6 +933,9 @@ forItemMatchingDictionary:(NSDictionary<NSString *, id> *)dictionary
       willDisplayCell:(UITableViewCell *)cell
     forRowAtIndexPath:(NSIndexPath *)indexPath {
     (void)tableView;
+    if ([self isGalleryModeEnabled]) {
+        return;
+    }
     NSDictionary<NSString *, id> *dictionary = [self itemDictionaryAtIndexPath:indexPath];
     NSString *hiddenContent = [self presentationHiddenItemContent];
     BOOL hidesCell = [hiddenContent length] > 0 && [dictionary[kKayokoItemKeyContent] isEqualToString:hiddenContent];
@@ -753,20 +951,21 @@ forItemMatchingDictionary:(NSDictionary<NSString *, id> *)dictionary
 }
 
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
+    if ([self isGalleryModeEnabled]) {
+        return;
+    }
     [[tableView cellForRowAtIndexPath:indexPath] setSelected:NO animated:YES];
 
     KayokoPasteboardItem *item = [KayokoPasteboardItem itemFromDictionary:[self itemDictionaryAtIndexPath:indexPath]];
-    [[self actionHandler] activateItem:item
-                            historyKey:[self historyKey]
-                            completion:^(BOOL success) {
-                              if (success) {
-                                  if ([self automaticallyPaste]) {
-                                      [[self delegate] historyListViewControllerDidRequestHideAfterDirectPaste:self];
-                                  } else {
-                                      [[self delegate] historyListViewControllerDidRequestHide:self];
-                                  }
-                              }
-                            }];
+    [self activateItem:item];
+}
+
+- (CGFloat)tableView:(UITableView *)tableView heightForRowAtIndexPath:(NSIndexPath *)indexPath {
+    (void)indexPath;
+    if (![self isGalleryModeEnabled]) {
+        return [tableView rowHeight];
+    }
+    return MAX(kKayokoGalleryMinimumRowHeight, floor(CGRectGetHeight([tableView bounds]) / 3.0));
 }
 
 - (void)scrollViewWillEndDragging:(UIScrollView *)scrollView
@@ -782,6 +981,9 @@ forItemMatchingDictionary:(NSDictionary<NSString *, id> *)dictionary
 
 - (UISwipeActionsConfiguration *)tableView:(UITableView *)tableView
     leadingSwipeActionsConfigurationForRowAtIndexPath:(NSIndexPath *)indexPath {
+    if ([self isGalleryModeEnabled]) {
+        return nil;
+    }
     NSMutableArray<UIContextualAction *> *actions = [[NSMutableArray alloc] init];
     NSDictionary<NSString *, id> *dictionary = [self itemDictionaryAtIndexPath:indexPath];
     KayokoPasteboardItem *item = [KayokoPasteboardItem itemFromDictionary:dictionary];
@@ -811,6 +1013,9 @@ forItemMatchingDictionary:(NSDictionary<NSString *, id> *)dictionary
 
 - (UISwipeActionsConfiguration *)tableView:(UITableView *)tableView
     trailingSwipeActionsConfigurationForRowAtIndexPath:(NSIndexPath *)indexPath {
+    if ([self isGalleryModeEnabled]) {
+        return nil;
+    }
     KayokoPasteboardItem *item = [KayokoPasteboardItem itemFromDictionary:[self itemDictionaryAtIndexPath:indexPath]];
 
     NSMutableArray<UIContextualAction *> *actions = [[NSMutableArray alloc] init];
@@ -973,13 +1178,42 @@ forItemMatchingDictionary:(NSDictionary<NSString *, id> *)dictionary
 
 #pragma mark - Gestures
 
+- (void)activateItem:(KayokoPasteboardItem *)item {
+    if (!item) {
+        return;
+    }
+    [[self actionHandler] activateItem:item
+                            historyKey:[self historyKey]
+                            completion:^(BOOL success) {
+                              if (success) {
+                                  if ([self automaticallyPaste]) {
+                                      [[self delegate] historyListViewControllerDidRequestHideAfterDirectPaste:self];
+                                  } else {
+                                      [[self delegate] historyListViewControllerDidRequestHide:self];
+                                  }
+                              }
+                            }];
+}
+
+- (void)handleGalleryTapGestureRecognizer:(UITapGestureRecognizer *)recognizer {
+    if ([recognizer state] != UIGestureRecognizerStateEnded) {
+        return;
+    }
+    NSDictionary *dictionary = objc_getAssociatedObject([recognizer view], kKayokoGalleryItemDictionaryKey);
+    [self activateItem:[KayokoPasteboardItem itemFromDictionary:dictionary]];
+}
+
 - (void)handleLongPressGestureRecognizer:(UILongPressGestureRecognizer *)recognizer {
     if ([recognizer state] != UIGestureRecognizerStateBegan) {
         return;
     }
 
-    NSIndexPath *indexPath = [[self tableView] indexPathForCell:(UITableViewCell *)[recognizer view]];
-    KayokoPasteboardItem *item = [KayokoPasteboardItem itemFromDictionary:[self itemDictionaryAtIndexPath:indexPath]];
+    NSDictionary *dictionary = objc_getAssociatedObject([recognizer view], kKayokoGalleryItemDictionaryKey);
+    if (!dictionary) {
+        NSIndexPath *indexPath = [[self tableView] indexPathForCell:(UITableViewCell *)[recognizer view]];
+        dictionary = [self itemDictionaryAtIndexPath:indexPath];
+    }
+    KayokoPasteboardItem *item = [KayokoPasteboardItem itemFromDictionary:dictionary];
     if (item) {
         [[self delegate] historyListViewController:self didRequestPreviewForItem:item];
     }

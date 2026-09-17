@@ -49,6 +49,7 @@ NS_ASSUME_NONNULL_BEGIN
 @property(nonatomic, assign) BOOL privacyMode;
 @property(nonatomic, assign) NSUInteger previewLineCount;
 @property(nonatomic, assign) KayokoItemDetailsMode itemDetailsMode;
+@property(nonatomic, assign, getter=isGalleryModeEnabled) BOOL galleryModeEnabled;
 
 - (instancetype)initWithName:(NSString *)name historyKey:(NSString *)historyKey NS_DESIGNATED_INITIALIZER;
 - (instancetype)initWithNibName:(nullable NSString *)nibNameOrNil

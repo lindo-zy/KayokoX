@@ -98,6 +98,9 @@ static NSString *const kKayokoPreferenceKeyFavoritesFilterPanelVisible = @"Favor
 static NSString *const kKayokoPreferenceKeyFavoritesFilterShowsCategories = @"FavoritesFilterShowsCategories";
 static NSString *const kKayokoPreferenceKeyFavoritesFilterShowsTags = @"FavoritesFilterShowsTags";
 static NSString *const kKayokoPreferenceKeyFavoritesFilterShowsApps = @"FavoritesFilterShowsApps";
+static NSString *const kKayokoPreferenceKeyGalleryModeEnabled = @"GalleryModeEnabled";
+static NSString *const kKayokoPreferenceKeyClipboardGalleryModeEnabled = @"ClipboardGalleryModeEnabled";
+static NSString *const kKayokoPreferenceKeyFavoritesGalleryModeEnabled = @"FavoritesGalleryModeEnabled";
 
 static BOOL const kKayokoPreferenceKeyEnabledDefaultValue = YES;
 static NSUInteger const kKayokoPreferenceKeyMaximumHistoryAmountDefaultValue = 200;
@@ -153,3 +156,6 @@ static BOOL const kKayokoPreferenceKeyFavoritesFilterPanelVisibleDefaultValue = 
 static BOOL const kKayokoPreferenceKeyFavoritesFilterShowsCategoriesDefaultValue = YES;
 static BOOL const kKayokoPreferenceKeyFavoritesFilterShowsTagsDefaultValue = NO;
 static BOOL const kKayokoPreferenceKeyFavoritesFilterShowsAppsDefaultValue = NO;
+static BOOL const kKayokoPreferenceKeyGalleryModeEnabledDefaultValue = NO;
+static BOOL const kKayokoPreferenceKeyClipboardGalleryModeEnabledDefaultValue = NO;
+static BOOL const kKayokoPreferenceKeyFavoritesGalleryModeEnabledDefaultValue = NO;

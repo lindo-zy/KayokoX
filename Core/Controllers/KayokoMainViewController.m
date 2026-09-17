@@ -91,6 +91,8 @@ NS_ASSUME_NONNULL_BEGIN
 @property(nonatomic, assign) NSUInteger showRequestIdentifier;
 @property(nonatomic, assign, getter=isDismissingPanel) BOOL dismissingPanel;
 @property(nonatomic, strong) KayokoExternalHideCoordinator *externalHideCoordinator;
+@property(nonatomic, assign, getter=isClipboardGalleryModeEnabled) BOOL clipboardGalleryModeEnabled;
+@property(nonatomic, assign, getter=isFavoritesGalleryModeEnabled) BOOL favoritesGalleryModeEnabled;
 
 #pragma mark - Transient Content
 
@@ -151,6 +153,22 @@ NS_ASSUME_NONNULL_END
         _itemDetailsMode = kKayokoPreferenceKeyItemDetailsModeDefaultValue;
         _privacyMode = kKayokoPreferenceKeyPrivacyModeDefaultValue;
         _clearButtonMode = kKayokoPreferenceKeyClearButtonModeDefaultValue;
+        NSUserDefaults *preferences = [[NSUserDefaults alloc] initWithSuiteName:kKayokoPreferencesIdentifier];
+        id legacyGalleryModeValue = [preferences objectForKey:kKayokoPreferenceKeyGalleryModeEnabled];
+        id clipboardGalleryModeValue =
+            [preferences objectForKey:kKayokoPreferenceKeyClipboardGalleryModeEnabled];
+        id favoritesGalleryModeValue =
+            [preferences objectForKey:kKayokoPreferenceKeyFavoritesGalleryModeEnabled];
+        _clipboardGalleryModeEnabled = clipboardGalleryModeValue
+                                           ? [clipboardGalleryModeValue boolValue]
+                                           : (legacyGalleryModeValue
+                                                  ? [legacyGalleryModeValue boolValue]
+                                                  : kKayokoPreferenceKeyClipboardGalleryModeEnabledDefaultValue);
+        _favoritesGalleryModeEnabled = favoritesGalleryModeValue
+                                           ? [favoritesGalleryModeValue boolValue]
+                                           : (legacyGalleryModeValue
+                                                  ? [legacyGalleryModeValue boolValue]
+                                                  : kKayokoPreferenceKeyFavoritesGalleryModeEnabledDefaultValue);
         _kayokoSupportedInterfaceOrientations = UIInterfaceOrientationMaskAll;
         [[NSNotificationCenter defaultCenter] addObserver:self
                                                  selector:@selector(handlePreviewTextEditingKeyboardWillChangeFrameNotification:)
@@ -170,6 +188,7 @@ NS_ASSUME_NONNULL_END
                                                                                        table:@"Tweak"]
               historyKey:kKayokoHistoryKeyHistory];
         [_historyListViewController setDelegate:self];
+        [_historyListViewController setGalleryModeEnabled:_clipboardGalleryModeEnabled];
         [self addChildViewController:_historyListViewController];
         [_mainView installContentView:[_historyListViewController tableView] hidden:NO];
         [_historyListViewController didMoveToParentViewController:self];
@@ -180,6 +199,7 @@ NS_ASSUME_NONNULL_END
                                                                                        table:@"Tweak"]
               historyKey:kKayokoHistoryKeyFavorites];
         [_favoritesListViewController setDelegate:self];
+        [_favoritesListViewController setGalleryModeEnabled:_favoritesGalleryModeEnabled];
         [self addChildViewController:_favoritesListViewController];
         [_mainView installContentView:[_favoritesListViewController tableView] hidden:YES];
         [_favoritesListViewController didMoveToParentViewController:self];
@@ -1453,7 +1473,43 @@ NS_ASSUME_NONNULL_END
         [searchController favoritesFilterShowsApps],
         ^(KayokoSearchController *controller, BOOL value) { [controller setFavoritesFilterShowsApps:value]; });
 
-    return [UIMenu menuWithTitle:@"" children:@[ categories, tags, apps ]];
+    return [UIMenu menuWithTitle:@""
+                        children:@[ [self galleryModeActionForHistoryKey:kKayokoHistoryKeyFavorites], categories, tags,
+                                    apps ]];
+}
+
+- (UIAction *)galleryModeActionForHistoryKey:(NSString *)historyKey {
+    NSBundle *bundle = [KayokoPasteboardManager localizationBundle];
+    BOOL isFavorites = [historyKey isEqualToString:kKayokoHistoryKeyFavorites];
+    BOOL enabled = isFavorites ? [self isFavoritesGalleryModeEnabled] : [self isClipboardGalleryModeEnabled];
+    __weak typeof(self) weakSelf = self;
+    UIAction *action = [UIAction
+        actionWithTitle:[bundle localizedStringForKey:@"Gallery View" value:nil table:@"Tweak"]
+                  image:[UIImage systemImageNamed:enabled ? @"rectangle.grid.2x2.fill" : @"rectangle.grid.2x2"]
+             identifier:nil
+                handler:^(__kindof UIAction *_Nonnull unusedAction) {
+                  (void)unusedAction;
+                  __strong typeof(weakSelf) strongSelf = weakSelf;
+                  if (!strongSelf) {
+                      return;
+                  }
+                  NSUserDefaults *preferences =
+                      [[NSUserDefaults alloc] initWithSuiteName:kKayokoPreferencesIdentifier];
+                  if (isFavorites) {
+                      BOOL newValue = ![strongSelf isFavoritesGalleryModeEnabled];
+                      [strongSelf setFavoritesGalleryModeEnabled:newValue];
+                      [[strongSelf favoritesListViewController] setGalleryModeEnabled:newValue];
+                      [preferences setBool:newValue forKey:kKayokoPreferenceKeyFavoritesGalleryModeEnabled];
+                  } else {
+                      BOOL newValue = ![strongSelf isClipboardGalleryModeEnabled];
+                      [strongSelf setClipboardGalleryModeEnabled:newValue];
+                      [[strongSelf historyListViewController] setGalleryModeEnabled:newValue];
+                      [preferences setBool:newValue forKey:kKayokoPreferenceKeyClipboardGalleryModeEnabled];
+                  }
+                  [strongSelf updateFavoritesFilterMenuForHistoryKey:[strongSelf effectiveActiveHistoryKey]];
+                }];
+    [action setState:enabled ? UIMenuElementStateOn : UIMenuElementStateOff];
+    return action;
 }
 
 - (UIMenu *)clipboardClearMenu {
@@ -1479,7 +1535,9 @@ NS_ASSUME_NONNULL_END
                             [weakSelf requestClearClipboardImagesOnly:YES];
                           }];
 
-    return [UIMenu menuWithTitle:@"" children:@[ clearClipboard, clearImages ]];
+    return [UIMenu menuWithTitle:@""
+                        children:@[ [self galleryModeActionForHistoryKey:kKayokoHistoryKeyHistory], clearClipboard,
+                                    clearImages ]];
 }
 
 - (void)requestClearClipboardImagesOnly:(BOOL)imagesOnly {
