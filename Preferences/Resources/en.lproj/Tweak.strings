@@ -32,6 +32,7 @@
 "CopyVault data directory was not found." = "CopyVault data directory was not found.";
 "CopyVault data is invalid: %@" = "CopyVault data is invalid: %@";
 "Dates" = "Dates";
+"Delete" = "Delete";
 "Edit" = "Edit";
 "Favorites" = "Favorites";
 "Flights" = "Flights";

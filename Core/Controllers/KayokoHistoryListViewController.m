@@ -17,15 +17,247 @@
 #import "KayokoTableViewCellContent.h"
 #import "KayokoTableViewCellContentProvider.h"
 
+#import <math.h>
 #import <objc/runtime.h>
 
 static CGFloat const kKayokoGalleryMinimumRowHeight = 112;
 static NSUInteger const kKayokoGalleryColumnCount = 2;
 static const void *kKayokoGalleryItemDictionaryKey = &kKayokoGalleryItemDictionaryKey;
+static CGFloat const kKayokoGalleryActionMinimumWidth = 40;
+static CGFloat const kKayokoGalleryActionMaximumWidth = 52;
+static NSInteger const kKayokoGalleryTrailingActionTagOffset = 1000;
+
+typedef void (^KayokoGalleryActionHandler)(UIView *sourceView, void (^completion)(BOOL success));
+
+@interface KayokoGalleryAction : NSObject
+@property(nonatomic, assign) UIContextualActionStyle style;
+@property(nonatomic, strong) UIImage *image;
+@property(nonatomic, strong) UIColor *backgroundColor;
+@property(nonatomic, copy) NSString *accessibilityLabel;
+@property(nonatomic, copy) KayokoGalleryActionHandler handler;
+@end
+
+@implementation KayokoGalleryAction
+@end
+
+@interface KayokoGallerySwipeView : UIView <UIGestureRecognizerDelegate>
+@property(nonatomic, strong, readonly) KayokoTableViewCell *itemCell;
+@property(nonatomic, copy) void (^willOpenHandler)(KayokoGallerySwipeView *swipeView);
+- (instancetype)initWithItemCell:(KayokoTableViewCell *)itemCell
+                  leadingActions:(NSArray<KayokoGalleryAction *> *)leadingActions
+                 trailingActions:(NSArray<KayokoGalleryAction *> *)trailingActions;
+- (void)setOpen:(BOOL)open animated:(BOOL)animated;
+- (BOOL)isOpen;
+@end
+
+@interface KayokoGallerySwipeView ()
+@property(nonatomic, strong, readwrite) KayokoTableViewCell *itemCell;
+@property(nonatomic, copy) NSArray<KayokoGalleryAction *> *leadingActions;
+@property(nonatomic, copy) NSArray<KayokoGalleryAction *> *trailingActions;
+@property(nonatomic, strong) UIStackView *leadingActionStackView;
+@property(nonatomic, strong) UIStackView *trailingActionStackView;
+@property(nonatomic, strong) UIPanGestureRecognizer *panGestureRecognizer;
+@property(nonatomic, assign) CGFloat leadingRevealWidth;
+@property(nonatomic, assign) CGFloat trailingRevealWidth;
+@property(nonatomic, assign) CGFloat panStartOffset;
+@property(nonatomic, assign) CGFloat contentOffset;
+@end
+
+@implementation KayokoGallerySwipeView
+
+- (instancetype)initWithItemCell:(KayokoTableViewCell *)itemCell
+                  leadingActions:(NSArray<KayokoGalleryAction *> *)leadingActions
+                 trailingActions:(NSArray<KayokoGalleryAction *> *)trailingActions {
+    self = [super initWithFrame:CGRectZero];
+    if (!self) {
+        return nil;
+    }
+
+    _itemCell = itemCell;
+    _leadingActions = [leadingActions copy] ?: @[];
+    _trailingActions = [trailingActions copy] ?: @[];
+    [self setClipsToBounds:YES];
+    [[self layer] setCornerRadius:12];
+
+    _leadingActionStackView = [[UIStackView alloc] init];
+    [_leadingActionStackView setAxis:UILayoutConstraintAxisHorizontal];
+    [_leadingActionStackView setDistribution:UIStackViewDistributionFillEqually];
+    [self addSubview:_leadingActionStackView];
+    _trailingActionStackView = [[UIStackView alloc] init];
+    [_trailingActionStackView setAxis:UILayoutConstraintAxisHorizontal];
+    [_trailingActionStackView setDistribution:UIStackViewDistributionFillEqually];
+    [self addSubview:_trailingActionStackView];
+
+    [_leadingActions enumerateObjectsUsingBlock:^(KayokoGalleryAction *action, NSUInteger index, BOOL *stop) {
+      (void)stop;
+      UIButton *button = [UIButton buttonWithType:UIButtonTypeCustom];
+      [button setTag:(NSInteger)index];
+      [button setImage:[action image] forState:UIControlStateNormal];
+      [button setTintColor:[UIColor whiteColor]];
+      [button setBackgroundColor:[action backgroundColor]];
+      [button setAccessibilityLabel:[action accessibilityLabel]];
+      [[button imageView] setContentMode:UIViewContentModeScaleAspectFit];
+      [button addTarget:self action:@selector(handleActionButton:) forControlEvents:UIControlEventTouchUpInside];
+      [[self leadingActionStackView] addArrangedSubview:button];
+    }];
+    [_trailingActions enumerateObjectsUsingBlock:^(KayokoGalleryAction *action, NSUInteger index, BOOL *stop) {
+      (void)stop;
+      UIButton *button = [UIButton buttonWithType:UIButtonTypeCustom];
+      [button setTag:kKayokoGalleryTrailingActionTagOffset + (NSInteger)index];
+      [button setImage:[action image] forState:UIControlStateNormal];
+      [button setTintColor:[UIColor whiteColor]];
+      [button setBackgroundColor:[action backgroundColor]];
+      [button setAccessibilityLabel:[action accessibilityLabel]];
+      [[button imageView] setContentMode:UIViewContentModeScaleAspectFit];
+      [button addTarget:self action:@selector(handleActionButton:) forControlEvents:UIControlEventTouchUpInside];
+      [[self trailingActionStackView] addArrangedSubview:button];
+    }];
+
+    [self addSubview:_itemCell];
+    _panGestureRecognizer = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(handlePanGesture:)];
+    [_panGestureRecognizer setDelegate:self];
+    [_panGestureRecognizer setMaximumNumberOfTouches:1];
+    [self addGestureRecognizer:_panGestureRecognizer];
+    return self;
+}
+
+- (void)layoutSubviews {
+    [super layoutSubviews];
+    CGFloat width = CGRectGetWidth([self bounds]);
+    CGFloat actionWidth = MIN(kKayokoGalleryActionMaximumWidth,
+                              MAX(kKayokoGalleryActionMinimumWidth, floor(width / 4.0)));
+    [self setLeadingRevealWidth:MIN(width, actionWidth * [[self leadingActions] count])];
+    [self setTrailingRevealWidth:MIN(width, actionWidth * [[self trailingActions] count])];
+    CGFloat height = CGRectGetHeight([self bounds]);
+    [[self leadingActionStackView] setFrame:CGRectMake(0, 0, [self leadingRevealWidth], height)];
+    [[self trailingActionStackView]
+        setFrame:CGRectMake(width - [self trailingRevealWidth], 0, [self trailingRevealWidth], height)];
+    [[self itemCell] setTransform:CGAffineTransformIdentity];
+    [[self itemCell] setFrame:[self bounds]];
+    [[self itemCell] setTransform:CGAffineTransformMakeTranslation([self contentOffset], 0)];
+
+    CGFloat symbolPointSize = MIN(18, MAX(14, floor(width / 11.0)));
+    UIImageSymbolConfiguration *configuration =
+        [UIImageSymbolConfiguration configurationWithPointSize:symbolPointSize weight:UIImageSymbolWeightSemibold];
+    for (UIStackView *stackView in @[ [self leadingActionStackView], [self trailingActionStackView] ]) {
+        for (UIButton *button in [stackView arrangedSubviews]) {
+            UIImage *image = [button imageForState:UIControlStateNormal];
+            [button setImage:[image imageByApplyingSymbolConfiguration:configuration] forState:UIControlStateNormal];
+        }
+    }
+}
+
+- (BOOL)isOpen {
+    return fabs([self contentOffset]) > 0.5;
+}
+
+- (void)setOpen:(BOOL)open animated:(BOOL)animated {
+    CGFloat targetOffset = 0;
+    if (open) {
+        targetOffset = [self contentOffset] < 0 ? -[self trailingRevealWidth] : [self leadingRevealWidth];
+    }
+    [self setContentOffset:targetOffset];
+    void (^changes)(void) = ^{
+      [[self itemCell] setTransform:CGAffineTransformMakeTranslation(targetOffset, 0)];
+    };
+    if (animated) {
+        [UIView animateWithDuration:0.22
+                              delay:0
+             usingSpringWithDamping:0.9
+              initialSpringVelocity:0
+                            options:UIViewAnimationOptionBeginFromCurrentState | UIViewAnimationOptionAllowUserInteraction
+                         animations:changes
+                         completion:nil];
+    } else {
+        changes();
+    }
+}
+
+- (BOOL)gestureRecognizerShouldBegin:(UIPanGestureRecognizer *)gestureRecognizer {
+    if (gestureRecognizer != [self panGestureRecognizer] ||
+        ([[self leadingActions] count] == 0 && [[self trailingActions] count] == 0)) {
+        return NO;
+    }
+    CGPoint velocity = [gestureRecognizer velocityInView:self];
+    if (fabs(velocity.x) <= fabs(velocity.y)) {
+        return NO;
+    }
+    return [self isOpen] || (velocity.x > 0 && [[self leadingActions] count] > 0) ||
+           (velocity.x < 0 && [[self trailingActions] count] > 0);
+}
+
+- (BOOL)gestureRecognizer:(UIGestureRecognizer *)gestureRecognizer
+    shouldRecognizeSimultaneouslyWithGestureRecognizer:(UIGestureRecognizer *)otherGestureRecognizer {
+    (void)gestureRecognizer;
+    (void)otherGestureRecognizer;
+    return YES;
+}
+
+- (void)handlePanGesture:(UIPanGestureRecognizer *)recognizer {
+    switch ([recognizer state]) {
+        case UIGestureRecognizerStateBegan:
+            [self setPanStartOffset:[self contentOffset]];
+            if (![self isOpen] && [self willOpenHandler]) {
+                [self willOpenHandler](self);
+            }
+            break;
+        case UIGestureRecognizerStateChanged: {
+            CGFloat translation = [recognizer translationInView:self].x;
+            CGFloat offset = MIN([self leadingRevealWidth],
+                                 MAX(-[self trailingRevealWidth], [self panStartOffset] + translation));
+            [self setContentOffset:offset];
+            [[self itemCell] setTransform:CGAffineTransformMakeTranslation(offset, 0)];
+            break;
+        }
+        case UIGestureRecognizerStateEnded:
+        case UIGestureRecognizerStateCancelled: {
+            CGFloat velocity = [recognizer velocityInView:self].x;
+            BOOL opensLeading = [[self leadingActions] count] > 0 &&
+                                  (velocity > 300 || ([self contentOffset] > 0 && velocity >= -300 &&
+                                                      [self contentOffset] >= [self leadingRevealWidth] * 0.5));
+            BOOL opensTrailing = [[self trailingActions] count] > 0 &&
+                                   (velocity < -300 || ([self contentOffset] < 0 && velocity <= 300 &&
+                                                       -[self contentOffset] >= [self trailingRevealWidth] * 0.5));
+            if (opensLeading) {
+                [self setContentOffset:MAX([self contentOffset], 0.5)];
+            } else if (opensTrailing) {
+                [self setContentOffset:MIN([self contentOffset], -0.5)];
+            }
+            BOOL opens = opensLeading || opensTrailing;
+            [self setOpen:opens animated:YES];
+            break;
+        }
+        default:
+            break;
+    }
+}
+
+- (void)handleActionButton:(UIButton *)button {
+    BOOL trailing = [button tag] >= kKayokoGalleryTrailingActionTagOffset;
+    NSUInteger index = (NSUInteger)([button tag] - (trailing ? kKayokoGalleryTrailingActionTagOffset : 0));
+    NSArray<KayokoGalleryAction *> *actions = trailing ? [self trailingActions] : [self leadingActions];
+    if (index >= [actions count]) {
+        return;
+    }
+    KayokoGalleryAction *action = actions[index];
+    [button setEnabled:NO];
+    __weak typeof(self) weakSelf = self;
+    [action handler]([self itemCell], ^(BOOL success) {
+      dispatch_async(dispatch_get_main_queue(), ^{
+        [button setEnabled:YES];
+        if (success) {
+            [weakSelf setOpen:NO animated:YES];
+        }
+      });
+    });
+}
+
+@end
 
 @interface KayokoGalleryRowCell : UITableViewCell
 @property(nonatomic, copy) NSArray<KayokoTableViewCell *> *itemCells;
-- (void)setGalleryItemCells:(NSArray<KayokoTableViewCell *> *)itemCells;
+@property(nonatomic, copy) NSArray<KayokoGallerySwipeView *> *itemSwipeViews;
+- (void)setGalleryItemSwipeViews:(NSArray<KayokoGallerySwipeView *> *)itemSwipeViews;
 - (nullable KayokoTableViewCell *)itemCellAtColumn:(NSUInteger)column;
 @end
 
@@ -40,35 +272,40 @@ static const void *kKayokoGalleryItemDictionaryKey = &kKayokoGalleryItemDictiona
     return self;
 }
 
-- (void)setGalleryItemCells:(NSArray<KayokoTableViewCell *> *)itemCells {
-    for (UIView *view in [self itemCells]) {
+- (void)setGalleryItemSwipeViews:(NSArray<KayokoGallerySwipeView *> *)itemSwipeViews {
+    for (UIView *view in [self itemSwipeViews]) {
         [view removeFromSuperview];
     }
-    _itemCells = [itemCells copy] ?: @[];
+    _itemSwipeViews = [itemSwipeViews copy] ?: @[];
+    NSMutableArray<KayokoTableViewCell *> *itemCells = [[NSMutableArray alloc] initWithCapacity:[_itemSwipeViews count]];
+    for (KayokoGallerySwipeView *swipeView in _itemSwipeViews) {
+        [itemCells addObject:[swipeView itemCell]];
+    }
+    _itemCells = [itemCells copy];
 
     UIView *previousView = nil;
-    for (KayokoTableViewCell *itemCell in _itemCells) {
-        [[self contentView] addSubview:itemCell];
-        [itemCell setTranslatesAutoresizingMaskIntoConstraints:NO];
+    for (KayokoGallerySwipeView *swipeView in _itemSwipeViews) {
+        [[self contentView] addSubview:swipeView];
+        [swipeView setTranslatesAutoresizingMaskIntoConstraints:NO];
         NSMutableArray<NSLayoutConstraint *> *constraints = [NSMutableArray arrayWithArray:@[
-            [[itemCell topAnchor] constraintEqualToAnchor:[[self contentView] topAnchor] constant:5],
-            [[itemCell bottomAnchor] constraintEqualToAnchor:[[self contentView] bottomAnchor] constant:-5]
+            [[swipeView topAnchor] constraintEqualToAnchor:[[self contentView] topAnchor] constant:5],
+            [[swipeView bottomAnchor] constraintEqualToAnchor:[[self contentView] bottomAnchor] constant:-5]
         ]];
         if (previousView) {
-            [constraints addObject:[[itemCell leadingAnchor] constraintEqualToAnchor:[previousView trailingAnchor]
-                                                                            constant:8]];
-            [constraints addObject:[[itemCell widthAnchor] constraintEqualToAnchor:[previousView widthAnchor]]];
+            [constraints addObject:[[swipeView leadingAnchor] constraintEqualToAnchor:[previousView trailingAnchor]
+                                                                             constant:8]];
+            [constraints addObject:[[swipeView widthAnchor] constraintEqualToAnchor:[previousView widthAnchor]]];
         } else {
-            [constraints addObject:[[itemCell leadingAnchor] constraintEqualToAnchor:[[self contentView] leadingAnchor]
-                                                                            constant:8]];
-            [constraints addObject:[[itemCell widthAnchor] constraintEqualToAnchor:[[self contentView] widthAnchor]
-                                                                      multiplier:0.5
-                                                                        constant:-12]];
+            [constraints addObject:[[swipeView leadingAnchor] constraintEqualToAnchor:[[self contentView] leadingAnchor]
+                                                                             constant:8]];
+            [constraints addObject:[[swipeView widthAnchor] constraintEqualToAnchor:[[self contentView] widthAnchor]
+                                                                       multiplier:0.5
+                                                                         constant:-12]];
         }
         [NSLayoutConstraint activateConstraints:constraints];
-        previousView = itemCell;
+        previousView = swipeView;
     }
-    if ([[self itemCells] count] == kKayokoGalleryColumnCount) {
+    if ([[self itemSwipeViews] count] == kKayokoGalleryColumnCount) {
         [[previousView trailingAnchor] constraintEqualToAnchor:[[self contentView] trailingAnchor] constant:-8].active = YES;
     }
 }
@@ -98,6 +335,7 @@ NS_ASSUME_NONNULL_BEGIN
 @property(nonatomic, strong) KayokoTableViewCellContentProvider *cellContentProvider;
 @property(nonatomic, strong) KayokoHistoryItemActionHandler *actionHandler;
 @property(nonatomic, copy, nullable) NSString *presentationHiddenItemContent;
+@property(nonatomic, weak, nullable) KayokoGallerySwipeView *openGallerySwipeView;
 
 - (KayokoTableViewCell *)newCellForItem:(KayokoPasteboardItem *)item addsPreviewGesture:(BOOL)addsPreviewGesture;
 - (KayokoTableViewCell *)newGalleryCellForItem:(KayokoPasteboardItem *)item
@@ -106,6 +344,11 @@ NS_ASSUME_NONNULL_BEGIN
                     intoCell:(KayokoTableViewCell *)cell
                   targetSize:(CGSize)targetSize;
 - (void)refreshVisibleItemDetails;
+- (NSArray<KayokoGalleryAction *> *)leadingActionsForItem:(KayokoPasteboardItem *)item
+                                               dictionary:(NSDictionary<NSString *, id> *)dictionary
+                                                indexPath:(NSIndexPath *)indexPath;
+- (KayokoGalleryAction *)deleteActionForItem:(KayokoPasteboardItem *)item indexPath:(NSIndexPath *)indexPath;
+- (UIContextualAction *)contextualActionForGalleryAction:(KayokoGalleryAction *)galleryAction;
 - (nullable UIContextualAction *)snapperActionForItem:(KayokoPasteboardItem *)item;
 @end
 
@@ -887,7 +1130,7 @@ forItemMatchingDictionary:(NSDictionary<NSString *, id> *)dictionary
         if (!rowCell) {
             rowCell = [[KayokoGalleryRowCell alloc] initWithReuseIdentifier:reuseIdentifier];
         }
-        NSMutableArray<KayokoTableViewCell *> *itemCells = [[NSMutableArray alloc] initWithCapacity:2];
+        NSMutableArray<KayokoGallerySwipeView *> *itemSwipeViews = [[NSMutableArray alloc] initWithCapacity:2];
         NSUInteger firstItemIndex = [indexPath row] * kKayokoGalleryColumnCount;
         for (NSUInteger column = 0; column < kKayokoGalleryColumnCount; column++) {
             NSUInteger itemIndex = firstItemIndex + column;
@@ -898,9 +1141,26 @@ forItemMatchingDictionary:(NSDictionary<NSString *, id> *)dictionary
             KayokoPasteboardItem *item = [KayokoPasteboardItem itemFromDictionary:dictionary];
             KayokoTableViewCell *itemCell = [self newGalleryCellForItem:item dictionary:dictionary];
             [itemCell setHidden:[[self presentationHiddenItemContent] isEqualToString:[item content]]];
-            [itemCells addObject:itemCell];
+            NSIndexPath *itemIndexPath = [NSIndexPath indexPathForRow:itemIndex inSection:0];
+            NSArray<KayokoGalleryAction *> *actions = [self leadingActionsForItem:item
+                                                                        dictionary:dictionary
+                                                                         indexPath:itemIndexPath];
+            NSArray<KayokoGalleryAction *> *trailingActions =
+                @[ [self deleteActionForItem:item indexPath:itemIndexPath] ];
+            KayokoGallerySwipeView *swipeView = [[KayokoGallerySwipeView alloc] initWithItemCell:itemCell
+                                                                                   leadingActions:actions
+                                                                                  trailingActions:trailingActions];
+            __weak typeof(self) weakSelf = self;
+            [swipeView setWillOpenHandler:^(KayokoGallerySwipeView *openingSwipeView) {
+              KayokoGallerySwipeView *openSwipeView = [weakSelf openGallerySwipeView];
+              if (openSwipeView && openSwipeView != openingSwipeView) {
+                  [openSwipeView setOpen:NO animated:YES];
+              }
+              [weakSelf setOpenGallerySwipeView:openingSwipeView];
+            }];
+            [itemSwipeViews addObject:swipeView];
         }
-        [rowCell setGalleryItemCells:itemCells];
+        [rowCell setGalleryItemSwipeViews:itemSwipeViews];
         return rowCell;
     }
     NSDictionary<NSString *, id> *dictionary = [self itemDictionaryAtIndexPath:indexPath];
@@ -987,25 +1247,10 @@ forItemMatchingDictionary:(NSDictionary<NSString *, id> *)dictionary
     NSMutableArray<UIContextualAction *> *actions = [[NSMutableArray alloc] init];
     NSDictionary<NSString *, id> *dictionary = [self itemDictionaryAtIndexPath:indexPath];
     KayokoPasteboardItem *item = [KayokoPasteboardItem itemFromDictionary:dictionary];
-
-    UIContextualAction *moveAction = [self moveActionForItem:item dictionary:dictionary indexPath:indexPath];
-    if (moveAction) {
-        [actions addObject:moveAction];
-    }
-
-    UIContextualAction *noteAction = [self noteActionForItem:item indexPath:indexPath];
-    if (noteAction) {
-        [actions addObject:noteAction];
-    }
-
-    UIContextualAction *saveAction = [self saveActionForItem:item];
-    if (saveAction) {
-        [actions addObject:saveAction];
-    }
-
-    UIContextualAction *linkAction = [self linkActionForItem:item];
-    if (linkAction) {
-        [actions addObject:linkAction];
+    for (KayokoGalleryAction *galleryAction in [self leadingActionsForItem:item
+                                                                   dictionary:dictionary
+                                                                    indexPath:indexPath]) {
+        [actions addObject:[self contextualActionForGalleryAction:galleryAction]];
     }
 
     return [UISwipeActionsConfiguration configurationWithActions:actions];
@@ -1019,32 +1264,7 @@ forItemMatchingDictionary:(NSDictionary<NSString *, id> *)dictionary
     KayokoPasteboardItem *item = [KayokoPasteboardItem itemFromDictionary:[self itemDictionaryAtIndexPath:indexPath]];
 
     NSMutableArray<UIContextualAction *> *actions = [[NSMutableArray alloc] init];
-    UIContextualAction *deleteAction = [UIContextualAction
-        contextualActionWithStyle:UIContextualActionStyleDestructive
-                            title:@""
-                          handler:^(__unused UIContextualAction *action, __unused __kindof UIView *sourceView,
-                                    void (^completionHandler)(BOOL)) {
-                            [[self actionHandler]
-                                deleteItem:item
-                                historyKey:[self historyKey]
-                                completion:^(BOOL success) {
-                                  if (!success) {
-                                      completionHandler(NO);
-                                      return;
-                                  }
-                                  [self removeItemAtIndexPath:indexPath
-                                                   completion:^(BOOL removed) {
-                                                     if (removed) {
-                                                         [[self delegate]
-                                                             historyListViewControllerDidChangeContentState:self];
-                                                     }
-                                                     completionHandler(removed);
-                                                   }];
-                                }];
-                          }];
-    [deleteAction setImage:[UIImage systemImageNamed:@"trash.fill"]];
-    [deleteAction setBackgroundColor:[UIColor systemRedColor]];
-    [actions addObject:deleteAction];
+    [actions addObject:[self contextualActionForGalleryAction:[self deleteActionForItem:item indexPath:indexPath]]];
 
     UIContextualAction *snapperAction = [self snapperActionForItem:item];
     if (snapperAction) {
@@ -1073,107 +1293,173 @@ forItemMatchingDictionary:(NSDictionary<NSString *, id> *)dictionary
     return snapperAction;
 }
 
-- (UIContextualAction *)moveActionForItem:(KayokoPasteboardItem *)item
-                               dictionary:(NSDictionary<NSString *, id> *)dictionary
-                                indexPath:(NSIndexPath *)indexPath {
+- (NSArray<KayokoGalleryAction *> *)leadingActionsForItem:(KayokoPasteboardItem *)item
+                                               dictionary:(NSDictionary<NSString *, id> *)dictionary
+                                                indexPath:(NSIndexPath *)indexPath {
+    if (!item || !dictionary || !indexPath) {
+        return @[];
+    }
+
+    NSMutableArray<KayokoGalleryAction *> *actions = [[NSMutableArray alloc] init];
+    NSBundle *bundle = [KayokoPasteboardManager localizationBundle];
+    __weak typeof(self) weakSelf = self;
+
     NSString *sourceHistoryKey = [self historyKey];
     BOOL sourceIsFavorites = [sourceHistoryKey isEqualToString:kKayokoHistoryKeyFavorites];
     NSString *destinationHistoryKey = sourceIsFavorites ? kKayokoHistoryKeyHistory : kKayokoHistoryKeyFavorites;
     NSString *imageName = sourceIsFavorites ? @"heart.slash.fill" : @"heart.fill";
-
-    UIContextualAction *moveAction = [UIContextualAction
-        contextualActionWithStyle:UIContextualActionStyleDestructive
-                            title:@""
-                          handler:^(__unused UIContextualAction *action, __unused __kindof UIView *sourceView,
-                                    void (^completionHandler)(BOOL)) {
-                            [[self actionHandler]
-                                             moveItem:item
-                                     sourceHistoryKey:sourceHistoryKey
-                                destinationHistoryKey:destinationHistoryKey
-                                           completion:^(BOOL success) {
-                                             if (!success) {
-                                                 completionHandler(NO);
-                                                 return;
-                                             }
-                                             [[self delegate] historyListViewController:self
-                                                                  didMoveItemDictionary:dictionary
-                                                                     fromHistoryWithKey:sourceHistoryKey
-                                                                       toHistoryWithKey:destinationHistoryKey];
-                                             [self removeItemAtIndexPath:indexPath
-                                                              completion:^(BOOL removed) {
-                                                                if (removed) {
-                                                                    [[self delegate]
-                                                                        historyListViewControllerDidChangeContentState:
-                                                                            self];
-                                                                }
-                                                                completionHandler(removed);
-                                                              }];
-                                           }];
-                          }];
+    KayokoGalleryAction *moveAction = [[KayokoGalleryAction alloc] init];
+    [moveAction setStyle:UIContextualActionStyleDestructive];
     [moveAction setImage:[UIImage systemImageNamed:imageName]];
     [moveAction setBackgroundColor:[UIColor systemPinkColor]];
-    return moveAction;
-}
+    [moveAction setAccessibilityLabel:[bundle localizedStringForKey:(sourceIsFavorites ? @"History" : @"Favorites")
+                                                               value:nil
+                                                               table:@"Tweak"]];
+    [moveAction setHandler:^(__unused UIView *sourceView, void (^completionHandler)(BOOL)) {
+      __strong typeof(weakSelf) strongSelf = weakSelf;
+      if (!strongSelf) {
+          completionHandler(NO);
+          return;
+      }
+      [[strongSelf actionHandler]
+                       moveItem:item
+               sourceHistoryKey:sourceHistoryKey
+          destinationHistoryKey:destinationHistoryKey
+                     completion:^(BOOL success) {
+                       if (!success) {
+                           completionHandler(NO);
+                           return;
+                       }
+                       [[strongSelf delegate] historyListViewController:strongSelf
+                                                didMoveItemDictionary:dictionary
+                                                   fromHistoryWithKey:sourceHistoryKey
+                                                     toHistoryWithKey:destinationHistoryKey];
+                       [strongSelf removeItemAtIndexPath:indexPath
+                                            completion:^(BOOL removed) {
+                                              if (removed) {
+                                                  [[strongSelf delegate]
+                                                      historyListViewControllerDidChangeContentState:strongSelf];
+                                              }
+                                              completionHandler(removed);
+                                            }];
+                     }];
+    }];
+    [actions addObject:moveAction];
 
-- (UIContextualAction *)noteActionForItem:(KayokoPasteboardItem *)item indexPath:(NSIndexPath *)indexPath {
-    UIContextualAction *noteAction = [UIContextualAction
-        contextualActionWithStyle:UIContextualActionStyleNormal
-                            title:@""
-                          handler:^(__unused UIContextualAction *action, __unused __kindof UIView *sourceView,
-                                    void (^completionHandler)(BOOL)) {
-                            KayokoTableViewCell *sourceCell =
-                                (KayokoTableViewCell *)[[self tableView] cellForRowAtIndexPath:indexPath];
-                            KayokoTableViewCell *presentationCell = [self newCellForItem:item addsPreviewGesture:NO];
-                            completionHandler(YES);
-                            dispatch_async(dispatch_get_main_queue(), ^{
-                              [[self delegate] historyListViewController:self
-                                               didRequestEditNoteForItem:item
-                                                        presentationCell:presentationCell
-                                                              sourceCell:sourceCell];
-                            });
-                          }];
+    KayokoGalleryAction *noteAction = [[KayokoGalleryAction alloc] init];
+    [noteAction setStyle:UIContextualActionStyleNormal];
     [noteAction setImage:[UIImage systemImageNamed:@"note.text"]];
     [noteAction setBackgroundColor:[UIColor systemOrangeColor]];
-    return noteAction;
-}
+    [noteAction setAccessibilityLabel:[bundle localizedStringForKey:@"Note" value:nil table:@"Tweak"]];
+    [noteAction setHandler:^(UIView *sourceView, void (^completionHandler)(BOOL)) {
+      __strong typeof(weakSelf) strongSelf = weakSelf;
+      if (!strongSelf) {
+          completionHandler(NO);
+          return;
+      }
+      KayokoTableViewCell *sourceCell = [sourceView isKindOfClass:[KayokoTableViewCell class]]
+                                                ? (KayokoTableViewCell *)sourceView
+                                                : [strongSelf visibleCellForItem:item];
+      KayokoTableViewCell *presentationCell = [strongSelf newCellForItem:item addsPreviewGesture:NO];
+      completionHandler(YES);
+      dispatch_async(dispatch_get_main_queue(), ^{
+        [[strongSelf delegate] historyListViewController:strongSelf
+                             didRequestEditNoteForItem:item
+                                      presentationCell:presentationCell
+                                            sourceCell:sourceCell];
+      });
+    }];
+    [actions addObject:noteAction];
 
-- (UIContextualAction *)saveActionForItem:(KayokoPasteboardItem *)item {
-    if (![self automaticallyPaste] && [[item imageName] length] == 0) {
-        return nil;
+    if ([self automaticallyPaste] || [[item imageName] length] > 0) {
+        BOOL savesImage = [[item imageName] length] > 0;
+        KayokoGalleryAction *saveAction = [[KayokoGalleryAction alloc] init];
+        [saveAction setStyle:UIContextualActionStyleNormal];
+        [saveAction setImage:[UIImage systemImageNamed:(savesImage ? @"square.and.arrow.down.fill" : @"doc.on.doc.fill")]];
+        [saveAction setBackgroundColor:[UIColor systemBlueColor]];
+        [saveAction setAccessibilityLabel:
+                        [bundle localizedStringForKey:(savesImage ? @"Save to Photos" : @"Copy")
+                                               value:nil
+                                               table:@"Tweak"]];
+        [saveAction setHandler:^(__unused UIView *sourceView, void (^completionHandler)(BOOL)) {
+          __strong typeof(weakSelf) strongSelf = weakSelf;
+          if (!strongSelf) {
+              completionHandler(NO);
+          } else if (savesImage) {
+              [[strongSelf actionHandler] saveImageForItem:item completion:completionHandler];
+          } else {
+              [[strongSelf actionHandler] copyItem:item completion:completionHandler];
+          }
+        }];
+        [actions addObject:saveAction];
     }
 
-    BOOL savesImage = [[item imageName] length] > 0;
-    UIContextualAction *saveAction = [UIContextualAction
-        contextualActionWithStyle:UIContextualActionStyleNormal
-                            title:@""
-                          handler:^(__unused UIContextualAction *action, __unused __kindof UIView *sourceView,
-                                    void (^completionHandler)(BOOL)) {
-                            if (savesImage) {
-                                [[self actionHandler] saveImageForItem:item completion:completionHandler];
-                            } else {
-                                [[self actionHandler] copyItem:item completion:completionHandler];
-                            }
-                          }];
-    [saveAction setImage:[UIImage systemImageNamed:savesImage ? @"square.and.arrow.down.fill" : @"doc.on.doc.fill"]];
-    [saveAction setBackgroundColor:[UIColor systemBlueColor]];
-    return saveAction;
+    if ([item hasLink]) {
+        KayokoGalleryAction *linkAction = [[KayokoGalleryAction alloc] init];
+        [linkAction setStyle:UIContextualActionStyleNormal];
+        [linkAction setImage:[UIImage systemImageNamed:@"safari"]];
+        [linkAction setBackgroundColor:[UIColor systemGreenColor]];
+        [linkAction setAccessibilityLabel:[bundle localizedStringForKey:@"Open" value:nil table:@"Tweak"]];
+        [linkAction setHandler:^(__unused UIView *sourceView, void (^completionHandler)(BOOL)) {
+          __strong typeof(weakSelf) strongSelf = weakSelf;
+          if (!strongSelf) {
+              completionHandler(NO);
+              return;
+          }
+          [[strongSelf actionHandler] openLinkForItem:item completion:completionHandler];
+        }];
+        [actions addObject:linkAction];
+    }
+    return actions;
 }
 
-- (UIContextualAction *)linkActionForItem:(KayokoPasteboardItem *)item {
-    if (![item hasLink]) {
-        return nil;
-    }
+- (KayokoGalleryAction *)deleteActionForItem:(KayokoPasteboardItem *)item indexPath:(NSIndexPath *)indexPath {
+    KayokoGalleryAction *deleteAction = [[KayokoGalleryAction alloc] init];
+    [deleteAction setStyle:UIContextualActionStyleDestructive];
+    [deleteAction setImage:[UIImage systemImageNamed:@"trash.fill"]];
+    [deleteAction setBackgroundColor:[UIColor systemRedColor]];
+    NSBundle *bundle = [KayokoPasteboardManager localizationBundle];
+    [deleteAction setAccessibilityLabel:[bundle localizedStringForKey:@"Delete" value:nil table:@"Tweak"]];
 
-    UIContextualAction *linkAction = [UIContextualAction
-        contextualActionWithStyle:UIContextualActionStyleNormal
+    __weak typeof(self) weakSelf = self;
+    [deleteAction setHandler:^(__unused UIView *sourceView, void (^completionHandler)(BOOL)) {
+      __strong typeof(weakSelf) strongSelf = weakSelf;
+      if (!strongSelf) {
+          completionHandler(NO);
+          return;
+      }
+      [[strongSelf actionHandler]
+          deleteItem:item
+          historyKey:[strongSelf historyKey]
+          completion:^(BOOL success) {
+            if (!success) {
+                completionHandler(NO);
+                return;
+            }
+            [strongSelf removeItemAtIndexPath:indexPath
+                                  completion:^(BOOL removed) {
+                                    if (removed) {
+                                        [[strongSelf delegate]
+                                            historyListViewControllerDidChangeContentState:strongSelf];
+                                    }
+                                    completionHandler(removed);
+                                  }];
+          }];
+    }];
+    return deleteAction;
+}
+
+- (UIContextualAction *)contextualActionForGalleryAction:(KayokoGalleryAction *)galleryAction {
+    UIContextualAction *contextualAction = [UIContextualAction
+        contextualActionWithStyle:[galleryAction style]
                             title:@""
-                          handler:^(__unused UIContextualAction *action, __unused __kindof UIView *sourceView,
+                          handler:^(__unused UIContextualAction *action, __kindof UIView *sourceView,
                                     void (^completionHandler)(BOOL)) {
-                            [[self actionHandler] openLinkForItem:item completion:completionHandler];
+                            [galleryAction handler](sourceView, completionHandler);
                           }];
-    [linkAction setImage:[UIImage systemImageNamed:@"safari"]];
-    [linkAction setBackgroundColor:[UIColor systemGreenColor]];
-    return linkAction;
+    [contextualAction setImage:[galleryAction image]];
+    [contextualAction setBackgroundColor:[galleryAction backgroundColor]];
+    return contextualAction;
 }
 
 #pragma mark - Gestures
@@ -1199,12 +1485,25 @@ forItemMatchingDictionary:(NSDictionary<NSString *, id> *)dictionary
     if ([recognizer state] != UIGestureRecognizerStateEnded) {
         return;
     }
+    KayokoGallerySwipeView *openSwipeView = [self openGallerySwipeView];
+    if ([openSwipeView isOpen]) {
+        [openSwipeView setOpen:NO animated:YES];
+        [self setOpenGallerySwipeView:nil];
+        return;
+    }
     NSDictionary *dictionary = objc_getAssociatedObject([recognizer view], kKayokoGalleryItemDictionaryKey);
     [self activateItem:[KayokoPasteboardItem itemFromDictionary:dictionary]];
 }
 
 - (void)handleLongPressGestureRecognizer:(UILongPressGestureRecognizer *)recognizer {
     if ([recognizer state] != UIGestureRecognizerStateBegan) {
+        return;
+    }
+
+    KayokoGallerySwipeView *openSwipeView = [self openGallerySwipeView];
+    if ([openSwipeView isOpen]) {
+        [openSwipeView setOpen:NO animated:YES];
+        [self setOpenGallerySwipeView:nil];
         return;
     }
 

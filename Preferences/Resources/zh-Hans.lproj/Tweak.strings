@@ -32,6 +32,7 @@
 "CopyVault data directory was not found." = "找不到 CopyVault 数据目录。";
 "CopyVault data is invalid: %@" = "CopyVault 数据无效：%@";
 "Dates" = "日期";
+"Delete" = "删除";
 "Edit" = "编辑";
 "Favorites" = "收藏夹";
 "Flights" = "航班";
