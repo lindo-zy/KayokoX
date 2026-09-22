@@ -35,6 +35,8 @@
 "Select Shortcut" = "选择快捷方式";
 "Search" = "搜索";
 "Selected" = "已选择";
+"User Apps" = "用户应用";
+"System Apps" = "系统应用";
 "Not Selected" = "未选择";
 "Shortcuts Footer" = "已收集应用长按菜单中的快捷项。";
 "No App Shortcuts" = "暂未收集到应用快捷项，SpringBoard 正在后台重新收集。";

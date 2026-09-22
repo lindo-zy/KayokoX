@@ -35,6 +35,8 @@
 "Select Shortcut" = "Select Shortcut";
 "Search" = "Search";
 "Selected" = "Selected";
+"User Apps" = "User Apps";
+"System Apps" = "System Apps";
 "Not Selected" = "Not Selected";
 "Shortcuts Footer" = "Quick actions collected from the apps' long-press menus.";
 "No App Shortcuts" = "No quick actions collected yet; SpringBoard is rebuilding the catalogue in the background.";

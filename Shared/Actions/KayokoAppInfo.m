@@ -13,10 +13,20 @@
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
 
 // Not in the SDK; loaded lazily from MobileCoreServices/CoreServices.
+@interface LSApplicationRecord : NSObject
+@property (nonatomic, readonly) NSArray *appTags;
+@property (getter=isLaunchProhibited, readonly) BOOL launchProhibited;
+@end
+
 @interface LSApplicationProxy : NSObject
 @property (nonatomic, readonly, copy) NSString *applicationIdentifier;
 @property (nonatomic, readonly, copy) NSString *bundleIdentifier;
 @property (nonatomic, readonly, copy) NSString *localizedName;
+@property (nonatomic, readonly, copy) NSString *applicationType;
+@property (nonatomic, readonly) NSArray *appTags;
+@property (nonatomic, readonly) NSURL *bundleURL;
+@property (getter=isLaunchProhibited, readonly) BOOL launchProhibited;
+- (LSApplicationRecord *)correspondingApplicationRecord;
 @end
 
 @interface LSApplicationWorkspace : NSObject
@@ -32,6 +42,79 @@
 @end
 
 #pragma clang diagnostic pop
+
+// Hidden-app detection follows the PullOver-X picker: a "hidden" tag on the
+// proxy, its LaunchServices record, or the bundle's SBAppTags; a
+// launch-prohibited app; or a web-app identifier. SpringBoard's own shortlist
+// is what surfaces these, so the picker list matches what the home screen
+// actually shows.
+static BOOL KayokoTagArrayContainsHidden(NSArray *tags) {
+    if (![tags isKindOfClass:[NSArray class]]) {
+        return NO;
+    }
+    for (id tag in tags) {
+        if ([tag isKindOfClass:[NSString class]] &&
+            [(NSString *)tag rangeOfString:@"hidden" options:0].location != NSNotFound) {
+            return YES;
+        }
+    }
+    return NO;
+}
+
+static BOOL KayokoAppProxyIsHidden(LSApplicationProxy *proxy) {
+    NSArray *proxyAppTags = nil;
+    NSArray *recordAppTags = nil;
+    NSArray *bundleAppTags = nil;
+    BOOL launchProhibited = NO;
+
+    @try {
+        if ([proxy respondsToSelector:@selector(correspondingApplicationRecord)]) {
+            LSApplicationRecord *record = [proxy correspondingApplicationRecord];
+            if ([record respondsToSelector:@selector(appTags)]) {
+                recordAppTags = [record appTags];
+            }
+            if ([record respondsToSelector:@selector(isLaunchProhibited)]) {
+                launchProhibited = [record isLaunchProhibited];
+            }
+        }
+        if ([proxy respondsToSelector:@selector(appTags)]) {
+            proxyAppTags = [proxy appTags];
+        }
+        if (!launchProhibited && [proxy respondsToSelector:@selector(isLaunchProhibited)]) {
+            launchProhibited = [proxy isLaunchProhibited];
+        }
+        NSURL *bundleURL = [proxy respondsToSelector:@selector(bundleURL)] ? [proxy bundleURL] : nil;
+        if (bundleURL && [bundleURL checkResourceIsReachableAndReturnError:nil]) {
+            NSBundle *bundle = [NSBundle bundleWithURL:bundleURL];
+            bundleAppTags = [bundle objectForInfoDictionaryKey:@"SBAppTags"];
+        }
+    } @catch (NSException *exception) {
+        (void)exception;
+    }
+
+    NSString *identifier = [proxy respondsToSelector:@selector(applicationIdentifier)]
+        ? [proxy applicationIdentifier] : nil;
+    BOOL isWebApplication = [identifier rangeOfString:@"com.apple.webapp"
+                                              options:NSCaseInsensitiveSearch].location != NSNotFound;
+
+    return KayokoTagArrayContainsHidden(proxyAppTags)
+        || KayokoTagArrayContainsHidden(recordAppTags)
+        || KayokoTagArrayContainsHidden(bundleAppTags)
+        || isWebApplication
+        || launchProhibited;
+}
+
+static NSString *KayokoAppProxyType(LSApplicationProxy *proxy) {
+    NSString *type = nil;
+    @try {
+        if ([proxy respondsToSelector:@selector(applicationType)]) {
+            type = [proxy applicationType];
+        }
+    } @catch (NSException *exception) {
+        (void)exception;
+    }
+    return [type isKindOfClass:[NSString class]] ? type : nil;
+}
 
 @implementation KayokoAppInfo
 
@@ -131,6 +214,15 @@
             ![proxy respondsToSelector:@selector(bundleIdentifier)]) {
             continue;
         }
+        // Keep the picker list to launchable user/system apps, mirroring the
+        // reference implementation: hidden, launch-prohibited, web-app and
+        // internal proxies never reach the list.
+        NSString *applicationType = KayokoAppProxyType(proxy);
+        BOOL isUser = [applicationType isEqualToString:@"User"];
+        BOOL isSystem = [applicationType isEqualToString:@"System"];
+        if (!isUser && !isSystem) continue;
+        if (KayokoAppProxyIsHidden(proxy)) continue;
+
         NSString *bundleID = [self bundleIDForProxy:proxy];
         NSString *name = [self localizedNameForProxy:proxy] ?: bundleID;
         if ([bundleID length] == 0 || [seen containsObject:bundleID]) continue;
@@ -139,6 +231,7 @@
         KayokoAppInfo *app = [[KayokoAppInfo alloc] init];
         app->_bundleID = [bundleID copy];
         app->_name = [name copy];
+        app->_userApp = isUser;
         [apps addObject:app];
     }
     [apps sortUsingComparator:^NSComparisonResult(KayokoAppInfo *left, KayokoAppInfo *right) {
