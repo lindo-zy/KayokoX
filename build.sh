@@ -41,6 +41,39 @@ export THEOS
 MAKE_BIN="$(command -v gmake || command -v make)"
 PACKAGE_ID="$(awk -F': ' '/^Package:/{print $2; exit}' "$ROOT/control")"
 
+# 编译结果 Bark 推送；key 保存在本地 local.env（已 gitignore，不入库）。
+# 推送失败只告警，不影响编译结果与退出码。
+notify_bark() {
+    local message="$1"
+    local env_file="$ROOT/local.env"
+
+    if [[ ! -f "$env_file" ]]; then
+        echo "==> [bark] $env_file not found, skip push" >&2
+        return 0
+    fi
+    # shellcheck disable=SC1090
+    if ! source "$env_file"; then
+        echo "==> [bark] failed to load $env_file, skip push" >&2
+        return 0
+    fi
+    if [[ -z "${BARK_KEY:-}" ]]; then
+        echo "==> [bark] BARK_KEY not set in $env_file, skip push" >&2
+        return 0
+    fi
+
+    local encoded="$message"
+    if command -v python3 >/dev/null 2>&1; then
+        encoded="$(python3 -c 'import sys, urllib.parse; sys.stdout.write(urllib.parse.quote(sys.argv[1], safe=""))' "$message")"
+    fi
+
+    if curl -fsS --max-time 10 "https://api.day.app/${BARK_KEY}/${encoded}" >/dev/null 2>&1; then
+        echo "==> [bark] push sent: $message"
+    else
+        echo "==> [bark] push failed, build result unaffected" >&2
+    fi
+    return 0
+}
+
 cleanup_build_artifacts() {
     echo ""
     echo "==> Cleaning build cache…"
@@ -90,7 +123,24 @@ case "$scheme" in
         ;;
 esac
 
-trap cleanup_build_artifacts EXIT
+# 编译开始后才推送结果；--help 或参数错误不推送
+BUILD_STARTED=false
+
+finalize() {
+    local rc=$?
+    cleanup_build_artifacts
+    if [[ "$BUILD_STARTED" == true ]]; then
+        if [[ "$rc" -eq 0 ]]; then
+            notify_bark "kayokox改动完成"
+        else
+            notify_bark "kayokox编译失败"
+        fi
+    fi
+}
+
+trap finalize EXIT
+
+BUILD_STARTED=true
 
 case "$scheme" in
     roothide) build_one roothide roothide ;;
