@@ -6,8 +6,6 @@
 #import "KayokoAppInfo.h"
 
 #import <dlfcn.h>
-#import <objc/message.h>
-#import <objc/runtime.h>
 
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
@@ -31,10 +29,9 @@
 
 @interface LSApplicationWorkspace : NSObject
 + (instancetype)defaultWorkspace;
-// Two synchronous passes (system = 0, user = 1) matching the reference
-// implementation; allInstalledApplications: can block while LaunchServices
-// is cold.
-- (void)enumerateApplicationsOfType:(NSUInteger)type block:(void (^)(LSApplicationProxy *proxy))block;
+// Single all-apps pass, matching the PullOver-X picker; can block while
+// LaunchServices is cold, so callers keep this off the main thread.
+- (NSArray<LSApplicationProxy *> *)allApplications;
 @end
 
 @interface UIImage (KayokoAppIcon)
@@ -145,31 +142,20 @@ static NSString *KayokoAppProxyType(LSApplicationProxy *proxy) {
     }
     @try {
         id workspace = [workspaceClass performSelector:@selector(defaultWorkspace)];
-        if (!workspace) {
+        if (!workspace || ![workspace respondsToSelector:@selector(allApplications)]) {
             return @[];
         }
 
-        SEL enumerateSelector = @selector(enumerateApplicationsOfType:block:);
-        if ([workspace respondsToSelector:enumerateSelector]) {
-            Class proxyClass = [self appProxyClass];
-            NSMutableArray *enumerated = [NSMutableArray array];
-            BOOL threw = NO;
-            @try {
-                for (NSUInteger type = 0; type <= 1; type++) {
-                    ((void (*)(id, SEL, NSUInteger, void (^)(LSApplicationProxy *)))objc_msgSend)(
-                        workspace, enumerateSelector, type, ^(LSApplicationProxy *proxy) {
-                            if (!proxyClass || [proxy isKindOfClass:proxyClass]) [enumerated addObject:proxy];
-                        });
-                }
-            } @catch (NSException *exception) {
-                NSLog(@"[Kayoko] app enumeration failed (%@)", exception);
-                threw = YES;
-            }
-            if (!threw && [enumerated count] > 0) {
-                return enumerated;
-            }
+        NSArray *applications = [workspace allApplications];
+        Class proxyClass = [self appProxyClass];
+        if (!proxyClass) {
+            return [applications isKindOfClass:[NSArray class]] ? applications : @[];
         }
-        return @[];
+        NSMutableArray *proxies = [NSMutableArray array];
+        for (LSApplicationProxy *proxy in applications) {
+            if ([proxy isKindOfClass:proxyClass]) [proxies addObject:proxy];
+        }
+        return proxies;
     } @catch (NSException *exception) {
         NSLog(@"[Kayoko] app enumeration failed (%@)", exception);
         return @[];
