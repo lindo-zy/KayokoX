@@ -45,61 +45,43 @@ notify_bark() {
     return 0
 }
 
-# 构建成功后把 deb 上传到坚果云 WebDAV，对齐 TypeX/webdav-sync.py 的多项目布局：
-#   https://dav.jianguoyun.com/dav/KayokoX/ios16|ios17/<deb>
-# 鉴权走 ~/.netrc 的 dav.jianguoyun.com 条目（curl --netrc），脚本与仓库均不含密码；
-# 目录自动逐级创建；上传失败只告警并推送 Bark，不影响构建结果与退出码。
-# 可选 local.env 覆盖：WEBDAV_URL（默认 https://dav.jianguoyun.com/dav/）、
-# WEBDAV_PROJECT（默认取仓库目录名 KayokoX）。
+# 完全对齐 TypeX 发布流程：构建成功后先把 deb 归档到 iCloud Downloads/<项目>/<label>/
+# （shasum 校验两端一致，旧版本保留），再由 TypeX/webdav-sync.py 增量同步到坚果云
+# （鉴权走 ~/.netrc，远端缺失或大小不一致才 PUT，同步后对账，不一致退出码 1）。
+# 归档/同步失败只告警并推送 Bark，不影响构建结果与退出码。
 WEBDAV_UPLOADED=false
-WEBDAV_UPLOAD_FAILED=false
+ARCHIVE_FAILED=false
 
-webdav_machine_configured() {
-    local netrc_host="$1"
-    [[ -f "$HOME/.netrc" ]] && grep -Eq "machine[[:space:]]+${netrc_host}([[:space:]]|\$)" "$HOME/.netrc" 2>/dev/null
-}
+archive_deb_to_icloud() {
+    local label="$1"
+    local project
+    project="$(basename "$ROOT")"
+    local deb_path="$ROOT/packages/${label}/${PACKAGE_ID}_${PACKAGE_VERSION}_${label}_iphoneos-arm64e.deb"
+    local icloud_dir="$HOME/Library/Mobile Documents/com~apple~CloudDocs/Downloads/${project}/${label}"
+    local icloud_deb="${icloud_dir}/$(basename "$deb_path")"
 
-upload_webdav() {
-    local file_path="$1"
-    local remote_subdir="$2"
-    local file_name
-    file_name="$(basename "$file_path")"
-
-    local base_url="https://dav.jianguoyun.com/dav"
-    local env_file="$ROOT/local.env"
-    if [[ -f "$env_file" ]]; then
-        # shellcheck disable=SC1090
-        source "$env_file" || true
-    fi
-    base_url="${WEBDAV_URL:-${base_url}}"
-    local project="${WEBDAV_PROJECT:-$(basename "$ROOT")}"
-
-    local netrc_host="${base_url#*://}"
-    netrc_host="${netrc_host%%/*}"
-    if ! webdav_machine_configured "$netrc_host"; then
-        echo "==> [webdav] no '$netrc_host' entry in ~/.netrc, skip upload" >&2
+    if [[ ! -f "$deb_path" ]]; then
         return 0
     fi
 
-    local remote_dir_url="${base_url%/}/${project}"
-    local remote_subdir_url="${remote_dir_url}/${remote_subdir}"
-    local remote_path="${remote_subdir_url}/${file_name}"
-
-    # 坚果云要求目标目录已存在；已存在时 MKCOL 返回 405，忽略即可。
-    curl -s --connect-timeout 5 --max-time 15 --netrc -X MKCOL "$remote_dir_url" -o /dev/null || true
-    curl -s --connect-timeout 5 --max-time 15 --netrc -X MKCOL "$remote_subdir_url" -o /dev/null || true
-
-    echo "==> [webdav] uploading ${file_name} ..."
-    if curl -fsS --connect-timeout 5 --max-time 300 --netrc -T "$file_path" "$remote_path"; then
-        echo "==> [webdav] uploaded: $remote_path"
-        WEBDAV_UPLOADED=true
+    if ! mkdir -p "$icloud_dir" || ! cp -f "$deb_path" "$icloud_deb"; then
+        echo "==> [archive] failed to copy deb to iCloud: $icloud_deb" >&2
+        ARCHIVE_FAILED=true
+        notify_bark "kayokox-${PACKAGE_VERSION}-归档失败"
         return 0
     fi
 
-    echo "==> [webdav] upload failed: $remote_path" >&2
-    WEBDAV_UPLOAD_FAILED=true
-    notify_bark "kayokox-${PACKAGE_VERSION}-上传失败"
-    return 0
+    local src_sum dst_sum
+    src_sum="$(shasum -a 256 "$deb_path" | awk '{print $1}')"
+    dst_sum="$(shasum -a 256 "$icloud_deb" | awk '{print $1}')"
+    if [[ "$src_sum" != "$dst_sum" ]]; then
+        echo "==> [archive] shasum mismatch after iCloud copy: $icloud_deb" >&2
+        ARCHIVE_FAILED=true
+        notify_bark "kayokox-${PACKAGE_VERSION}-归档失败"
+        return 0
+    fi
+
+    echo "==> [archive] deb archived to iCloud: $icloud_deb"
 }
 
 if [[ -z "$PACKAGE_ID" || ! "$PACKAGE_ID" =~ ^[a-z0-9][a-z0-9+.-]*$ ]]; then
@@ -354,18 +336,30 @@ echo "==> Cleanup complete: deb files only in ios16/ios17 folders"
 
 notify_bark "kayokox改动完成"
 
-# 把本次构建的 deb 上传到坚果云 WebDAV
+# 归档 iCloud 后由 TypeX/webdav-sync.py 对账同步坚果云（TypeX 流程约定）
 for upload_label in ios16 ios17; do
     if [[ "$BUILD_TARGET" != "all" && "$BUILD_TARGET" != "$upload_label" ]]; then
         continue
     fi
-    upload_deb_path="$ROOT/packages/${upload_label}/${PACKAGE_ID}_${PACKAGE_VERSION}_${upload_label}_iphoneos-arm64e.deb"
-    if [[ -f "$upload_deb_path" ]]; then
-        upload_webdav "$upload_deb_path" "$upload_label"
-    fi
+    archive_deb_to_icloud "$upload_label"
 done
 
-if [[ "$WEBDAV_UPLOAD_FAILED" == true ]]; then
+if [[ "$ARCHIVE_FAILED" == false ]]; then
+    webdav_sync_script="$(cd "$ROOT/.." && pwd)/TypeX/webdav-sync.py"
+    if [[ -f "$webdav_sync_script" ]]; then
+        echo "==> [webdav] syncing $(basename "$ROOT") archive to Jianguoyun ..."
+        if python3 "$webdav_sync_script" "$(basename "$ROOT")"; then
+            WEBDAV_UPLOADED=true
+        else
+            ARCHIVE_FAILED=true
+            notify_bark "kayokox-${PACKAGE_VERSION}-上传失败"
+        fi
+    else
+        echo "==> [webdav] webdav-sync.py not found: $webdav_sync_script, skip" >&2
+    fi
+fi
+
+if [[ "$ARCHIVE_FAILED" == true ]]; then
     echo "==> [webdav] finished with failures" >&2
 elif [[ "$WEBDAV_UPLOADED" == true ]]; then
     notify_bark "kayokox-${PACKAGE_VERSION}-上传完成"
