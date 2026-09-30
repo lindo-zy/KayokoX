@@ -9,6 +9,7 @@
 #import "KayokoHelperRuntime.h"
 
 #import <CaptainHook/CaptainHook.h>
+#import <HBLog.h>
 #import <UIKit/UIKit.h>
 #import <objc/runtime.h>
 
@@ -42,6 +43,42 @@ CHDeclareClass(UIKeyboardLayoutStar);
 @end
 
 static const void *kKayokoScaledDockImageAssociatedKey = &kKayokoScaledDockImageAssociatedKey;
+
+// 听写键 dock 按钮承载剪切板呼出入口：系统在听写不可用（听写开关关闭、安全输入框、
+// 资产缺失）时会将其置灰禁用，此时按压事件不会派发。识别依据是按钮的 action target
+// 挂有听写回调 selector，不会误伤 emoji/地球键。
+static BOOL kayokoDockItemButtonIsDictationButton(UIKeyboardDockItemButton *button) {
+    NSSet<id> *targets = [button allTargets];
+    if (![targets isKindOfClass:[NSSet class]] || [targets count] == 0) {
+        return NO;
+    }
+
+    for (id target in targets) {
+        if ([target respondsToSelector:@selector(dictationItemButtonWasPressed:withEvent:)] ||
+            [target respondsToSelector:@selector(dictationItemButtonWasPressed:withEvent:isRunningButton:)]) {
+            return YES;
+        }
+    }
+
+    return NO;
+}
+
+CHOptimizedMethod1(self, void, UIKeyboardDockItemButton, setEnabled, BOOL, enabled) {
+    if (!enabled && kayokoDockItemButtonIsDictationButton(self)) {
+        HBLogInfo(@"Kayoko: dictation dock button keep enabled while system disables it");
+        enabled = YES;
+    }
+    CHSuper1(UIKeyboardDockItemButton, setEnabled, enabled);
+}
+
+CHOptimizedMethod0(self, void, UIKeyboardDockItemButton, layoutSubviews) {
+    CHSuper0(UIKeyboardDockItemButton, layoutSubviews);
+    // 兜底：按钮初始化时 action 尚未挂接，setEnabled: 拦截识别不到，只能在布局阶段补开。
+    if (![self isEnabled] && kayokoDockItemButtonIsDictationButton(self)) {
+        HBLogInfo(@"Kayoko: dictation dock button re-enabled in layout pass");
+        [self setEnabled:YES];
+    }
+}
 
 CHOptimizedMethod2(self, id, UIKeyboardDockItem, initWithImageName, id, arg1, identifier, id, arg2) {
     if ([arg1 isEqualToString:@"mic"]) {
@@ -182,6 +219,8 @@ CHOptimizedMethod1(self, UIKBTree *, UIKeyboardLayoutStar, keyHitTest, CGPoint, 
       } else {
           CHHook1(UIKeyboardDockItemButton, imageRectForContentRect);
       }
+      CHHook1(UIKeyboardDockItemButton, setEnabled);
+      CHHook0(UIKeyboardDockItemButton, layoutSubviews);
       CHHook3(UISystemKeyboardDockController, dictationItemButtonWasPressed, withEvent, isRunningButton);
       CHHook2(UISystemKeyboardDockController, dictationItemButtonWasPressed, withEvent);
       CHHook0(UIKeyboardImpl, shouldShowDictationKey);
