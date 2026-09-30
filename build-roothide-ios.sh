@@ -45,6 +45,56 @@ notify_bark() {
     return 0
 }
 
+# 构建成功后把 deb 上传到坚果云 WebDAV；凭据保存在 local.env（已 gitignore，不入库）：
+#   WEBDAV_URL（可选，默认 https://dav.jianguoyun.com/dav/）
+#   WEBDAV_USER / WEBDAV_PASS（坚果云账号 + 安全选项里生成的应用密码）
+#   WEBDAV_DIR（可选，默认 kayokox；上传时自动创建一级目录）
+# 凭据缺失时跳过；上传失败只告警并推送 Bark，不影响构建结果与退出码。
+WEBDAV_UPLOADED=false
+WEBDAV_UPLOAD_FAILED=false
+
+upload_webdav() {
+    local file_path="$1"
+    local file_name
+    file_name="$(basename "$file_path")"
+    local env_file="$ROOT/local.env"
+
+    if [[ ! -f "$env_file" ]]; then
+        echo "==> [webdav] $env_file not found, skip upload" >&2
+        return 0
+    fi
+    # shellcheck disable=SC1090
+    if ! source "$env_file"; then
+        echo "==> [webdav] failed to load $env_file, skip upload" >&2
+        return 0
+    fi
+    if [[ -z "${WEBDAV_USER:-}" || -z "${WEBDAV_PASS:-}" ]]; then
+        echo "==> [webdav] WEBDAV_USER/WEBDAV_PASS not set in $env_file, skip upload" >&2
+        return 0
+    fi
+
+    local base_url="${WEBDAV_URL:-https://dav.jianguoyun.com/dav/}"
+    local remote_dir="${WEBDAV_DIR:-kayokox}"
+    local remote_path="${base_url%/}/${remote_dir%/}/${file_name}"
+
+    # 坚果云要求目标目录已存在；已存在时 MKCOL 返回 405，忽略即可。
+    curl -fsS --connect-timeout 5 --max-time 15 -u "${WEBDAV_USER}:${WEBDAV_PASS}" \
+        -X MKCOL "${base_url%/}/${remote_dir%/}" >/dev/null 2>&1 || true
+
+    echo "==> [webdav] uploading ${file_name} ..."
+    if curl -fsS --connect-timeout 5 --max-time 300 -u "${WEBDAV_USER}:${WEBDAV_PASS}" \
+        -T "$file_path" "$remote_path"; then
+        echo "==> [webdav] uploaded: $remote_path"
+        WEBDAV_UPLOADED=true
+        return 0
+    fi
+
+    echo "==> [webdav] upload failed: $remote_path" >&2
+    WEBDAV_UPLOAD_FAILED=true
+    notify_bark "kayokox-${PACKAGE_VERSION}-上传失败"
+    return 0
+}
+
 if [[ -z "$PACKAGE_ID" || ! "$PACKAGE_ID" =~ ^[a-z0-9][a-z0-9+.-]*$ ]]; then
     echo "error: invalid Debian package name in control: ${PACKAGE_ID:-<missing>}" >&2
     exit 1
@@ -296,3 +346,20 @@ echo "==> Final version: $PACKAGE_VERSION"
 echo "==> Cleanup complete: deb files only in ios16/ios17 folders"
 
 notify_bark "kayokox改动完成"
+
+# 把本次构建的 deb 上传到坚果云 WebDAV
+for upload_label in ios16 ios17; do
+    if [[ "$BUILD_TARGET" != "all" && "$BUILD_TARGET" != "$upload_label" ]]; then
+        continue
+    fi
+    upload_deb_path="$ROOT/packages/${upload_label}/${PACKAGE_ID}_${PACKAGE_VERSION}_${upload_label}_iphoneos-arm64e.deb"
+    if [[ -f "$upload_deb_path" ]]; then
+        upload_webdav "$upload_deb_path"
+    fi
+done
+
+if [[ "$WEBDAV_UPLOAD_FAILED" == true ]]; then
+    echo "==> [webdav] finished with failures" >&2
+elif [[ "$WEBDAV_UPLOADED" == true ]]; then
+    notify_bark "kayokox-${PACKAGE_VERSION}-上传完成"
+fi
