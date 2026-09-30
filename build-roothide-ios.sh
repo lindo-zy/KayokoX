@@ -45,45 +45,52 @@ notify_bark() {
     return 0
 }
 
-# 构建成功后把 deb 上传到坚果云 WebDAV；凭据保存在 local.env（已 gitignore，不入库）：
-#   WEBDAV_URL（可选，默认 https://dav.jianguoyun.com/dav/）
-#   WEBDAV_USER / WEBDAV_PASS（坚果云账号 + 安全选项里生成的应用密码）
-#   WEBDAV_DIR（可选，默认 kayokox；上传时自动创建一级目录）
-# 凭据缺失时跳过；上传失败只告警并推送 Bark，不影响构建结果与退出码。
+# 构建成功后把 deb 上传到坚果云 WebDAV，对齐 TypeX/webdav-sync.py 的多项目布局：
+#   https://dav.jianguoyun.com/dav/KayokoX/ios16|ios17/<deb>
+# 鉴权走 ~/.netrc 的 dav.jianguoyun.com 条目（curl --netrc），脚本与仓库均不含密码；
+# 目录自动逐级创建；上传失败只告警并推送 Bark，不影响构建结果与退出码。
+# 可选 local.env 覆盖：WEBDAV_URL（默认 https://dav.jianguoyun.com/dav/）、
+# WEBDAV_PROJECT（默认取仓库目录名 KayokoX）。
 WEBDAV_UPLOADED=false
 WEBDAV_UPLOAD_FAILED=false
 
+webdav_machine_configured() {
+    local netrc_host="$1"
+    [[ -f "$HOME/.netrc" ]] && grep -Eq "machine[[:space:]]+${netrc_host}([[:space:]]|\$)" "$HOME/.netrc" 2>/dev/null
+}
+
 upload_webdav() {
     local file_path="$1"
+    local remote_subdir="$2"
     local file_name
     file_name="$(basename "$file_path")"
+
+    local base_url="https://dav.jianguoyun.com/dav"
     local env_file="$ROOT/local.env"
+    if [[ -f "$env_file" ]]; then
+        # shellcheck disable=SC1090
+        source "$env_file" || true
+    fi
+    base_url="${WEBDAV_URL:-${base_url}}"
+    local project="${WEBDAV_PROJECT:-$(basename "$ROOT")}"
 
-    if [[ ! -f "$env_file" ]]; then
-        echo "==> [webdav] $env_file not found, skip upload" >&2
-        return 0
-    fi
-    # shellcheck disable=SC1090
-    if ! source "$env_file"; then
-        echo "==> [webdav] failed to load $env_file, skip upload" >&2
-        return 0
-    fi
-    if [[ -z "${WEBDAV_USER:-}" || -z "${WEBDAV_PASS:-}" ]]; then
-        echo "==> [webdav] WEBDAV_USER/WEBDAV_PASS not set in $env_file, skip upload" >&2
+    local netrc_host="${base_url#*://}"
+    netrc_host="${netrc_host%%/*}"
+    if ! webdav_machine_configured "$netrc_host"; then
+        echo "==> [webdav] no '$netrc_host' entry in ~/.netrc, skip upload" >&2
         return 0
     fi
 
-    local base_url="${WEBDAV_URL:-https://dav.jianguoyun.com/dav/}"
-    local remote_dir="${WEBDAV_DIR:-kayokox}"
-    local remote_path="${base_url%/}/${remote_dir%/}/${file_name}"
+    local remote_dir_url="${base_url%/}/${project}"
+    local remote_subdir_url="${remote_dir_url}/${remote_subdir}"
+    local remote_path="${remote_subdir_url}/${file_name}"
 
     # 坚果云要求目标目录已存在；已存在时 MKCOL 返回 405，忽略即可。
-    curl -fsS --connect-timeout 5 --max-time 15 -u "${WEBDAV_USER}:${WEBDAV_PASS}" \
-        -X MKCOL "${base_url%/}/${remote_dir%/}" >/dev/null 2>&1 || true
+    curl -s --connect-timeout 5 --max-time 15 --netrc -X MKCOL "$remote_dir_url" -o /dev/null || true
+    curl -s --connect-timeout 5 --max-time 15 --netrc -X MKCOL "$remote_subdir_url" -o /dev/null || true
 
     echo "==> [webdav] uploading ${file_name} ..."
-    if curl -fsS --connect-timeout 5 --max-time 300 -u "${WEBDAV_USER}:${WEBDAV_PASS}" \
-        -T "$file_path" "$remote_path"; then
+    if curl -fsS --connect-timeout 5 --max-time 300 --netrc -T "$file_path" "$remote_path"; then
         echo "==> [webdav] uploaded: $remote_path"
         WEBDAV_UPLOADED=true
         return 0
@@ -354,7 +361,7 @@ for upload_label in ios16 ios17; do
     fi
     upload_deb_path="$ROOT/packages/${upload_label}/${PACKAGE_ID}_${PACKAGE_VERSION}_${upload_label}_iphoneos-arm64e.deb"
     if [[ -f "$upload_deb_path" ]]; then
-        upload_webdav "$upload_deb_path"
+        upload_webdav "$upload_deb_path" "$upload_label"
     fi
 done
 
